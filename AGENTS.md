@@ -20,7 +20,9 @@ npm workspaces + Turborepo. Node 24 (runs `.ts` natively, no build step for test
 
 ## Google sign-in (AI Hub account)
 
-Optional, identity only: it does not log in to Claude, ChatGPT, etc. Those sites keep their own sessions in the lane cookie stores, and Google blocks its own sign-in inside embedded webviews, so provider logins use email or code on the provider site.
+Optional, identity only: it does not log in to Claude, ChatGPT, etc. Those sites keep their own sessions in the lane cookie stores.
+
+**Shared Google session** (Connections page, `LaneManager.googleLogin()`): Google blocks sign-in inside embedded webviews by user agent, so on macOS every lane window presents a Safari user agent (`build_lane` in `lib.rs`). The user signs in to Google once in a window with lane id `google`. While `LaneManager.google` is on (`localStorage.google`), `lane_open` copies that lane's `google.com` cookies into each new lane window (`google_sync` for windows already open), so "Continue with Google" on a provider site lists the account. Only Rust moves cookies; stores stay separate. Untested against live Google: it may still show a challenge, and sites that sign in through Google One Tap (a third-party iframe) may not see the session.
 
 Flow: desktop `signIn()` (`apps/desktop/src/auth.ts`) starts a loopback listener (`auth_listen`) and opens `apps/web` `/?port&challenge` in the default browser (`open_url`). The page links to `/auth/google?port&challenge`, which the proxy passes to `apps/server`. The server runs Google OAuth, redirects the browser to `http://127.0.0.1:<port>/cb?code=<one-time>`, and the app redeems it at `POST /auth/exchange` (also via the proxy) with the PKCE verifier for a signed session token. Without `port`/`challenge`, `/` is the plain web sign-in and the server sets a session cookie. `BASE_URL` in the server env is apps/web's public URL (Google's redirect target); desktop reads `VITE_AUTH_URL` (default `http://localhost:3000`). Server env vars: see `apps/server/.env.example`. Server tests fake Google's token endpoint via `GOOGLE_TOKEN_URL`.
 
@@ -52,7 +54,7 @@ Tests are plain `node:assert` scripts, no framework, only for `src/lib`. Add che
 - **Lane ids are short and plain**: `[A-Za-z0-9_-]`, max 16 bytes (window label, data-dir name, macOS store id). Rust rejects anything else. Lane URLs must be http(s).
 - **Lane state must come from the page, not from clicks.** `LaneManager.ok[id]` is the last probe of `window.__lane.ready()` (persisted as `localStorage.logins`); `state()` reports `unknown`, `logged-out`, `cold`, `ready`, `busy`, `needs-user`, `checking` from it. Closing a login window only hides it (Rust, emits `lane-hidden`); `finish()` probes the page, records the result, then closes the lane. A login window closes itself (`watch()`) once the prompt box appears after having been absent; sites that show it to logged-out visitors need Done. Never mark a lane logged in because the user clicked Done. `canSend()` gates sending.
 - **`evalJs` has a timeout** because `eval_with_callback` may never call back. Keep every eval path under a cap.
-- **Cookie isolation is per provider.** `data_directory` per lane, plus `data_store_identifier` on macOS. Do not share a store across lanes.
+- **Cookie isolation is per provider.** `data_directory` per lane, plus `data_store_identifier` on macOS. Do not share a store across lanes; the only cookies that move between stores are `google.com` ones, copied by the shared Google session.
 - Keep `cross.ts` pure (no DOM, no Tauri imports) so it stays testable under plain Node.
 - Provider names and URLs render as React text children only. Never `dangerouslySetInnerHTML`; the main window has Tauri access.
 - Lane/provider logic lives in `src/lib` and `src/state`. Components render and call `useHub()`; they do not call `invoke` or `lanes`.

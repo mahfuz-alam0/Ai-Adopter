@@ -16,7 +16,7 @@ export function WelcomePage() {
         {providers.length ? (
           <>
             <h1 className="text-xl font-bold tracking-tight">Log in to an AI to start</h1>
-            <p className="mt-1 mb-5 text-muted">None of your AIs is logged in. Log in with email or a code: Google sign-in does not work inside app windows.</p>
+            <p className="mt-1 mb-5 text-muted">None of your AIs is logged in. Log in with email or a code, or sign in to Google under Connections and use Continue with Google on each site.</p>
             <ul className="m-0 mb-4 flex list-none flex-col gap-2 p-0">
               {providers.map((p) => {
                 const s = stateOf(p.id)

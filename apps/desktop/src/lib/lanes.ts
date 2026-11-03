@@ -15,6 +15,7 @@ export type Phase = 'idle' | 'connecting' | 'sending' | 'thinking' | 'writing' |
 export const canSend = (s: State) => s !== 'needs-user' && s !== 'logged-out' && s !== 'checking'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const GOOGLE = 'google' // lane id of the shared Google session, matches lib.rs
 
 // Dev timing log: one Marks per lane for the run in flight (runs on a lane are serialized). See devlog.ts.
 const traces: Record<string, Marks | undefined> = {}
@@ -70,7 +71,35 @@ export class LaneManager {
   ) {
     setInterval(() => void this.sweep(), 15_000)
     // The window's close button only hides it (Rust), which is the same as clicking Done.
-    void listen<string>('lane-hidden', (e) => void this.finish(e.payload)).catch(() => undefined) // no Tauri in plain-browser dev
+    void listen<string>('lane-hidden', (e) => (e.payload === GOOGLE ? (this.googleHidden = true) : void this.finish(e.payload))).catch(() => undefined) // no Tauri in plain-browser dev
+  }
+
+  // Shared Google session (see lib.rs): while on, every lane window opens with a copy of the google.com cookies.
+  // The caller persists it, like ok.
+  google = false
+  private googleHidden = false
+
+  // Sign in to Google once in its own window. True once the session cookie exists; false if the window was closed first.
+  async googleLogin() {
+    this.googleHidden = false
+    await invoke('lane_open', { id: GOOGLE, url: 'https://accounts.google.com/', sel: '{}' })
+    await this.loaded(GOOGLE)
+    await invoke('lane_show', { id: GOOGLE, title: 'Sign in to Google' })
+    const signedIn = () => invoke<boolean>('google_signed_in').catch(() => false)
+    while (!this.googleHidden && !(await signedIn())) await sleep(1_000)
+    const ok = await signedIn() // closing the window right after signing in lands here with the flag set
+    if (ok) {
+      // Lanes opened before the sign-in have no copy yet.
+      for (const [id, l] of this.lanes) if (l.state !== 'cold') await invoke('google_sync', { id }).catch(() => undefined)
+    }
+    await invoke('lane_close', { id: GOOGLE })
+    this.google = ok
+    return ok
+  }
+
+  async googleOut() {
+    await invoke('google_signout')
+    this.google = false
   }
 
   // quiet = probe timeout in ms for a background run: a lane that is not ready is closed and the run fails, with no login window.
@@ -169,7 +198,7 @@ export class LaneManager {
   }
 
   private open(id: string) {
-    return invoke('lane_open', { id, url: this.urls[id], sel: JSON.stringify(this.sels[id] ?? {}) })
+    return invoke('lane_open', { id, url: this.urls[id], sel: JSON.stringify(this.sels[id] ?? {}), google: this.google })
   }
 
   // Best effort: a slow or navigating page must not keep the login window from showing.

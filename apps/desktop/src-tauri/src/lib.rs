@@ -14,22 +14,18 @@ fn init_script(sel: &str) -> Result<String, String> {
     Ok(format!("window.__SEL = {sel};\n{}", include_str!("../lanes/base.js")))
 }
 
-#[tauri::command]
-async fn lane_open(app: AppHandle, id: String, url: String, sel: String) -> Result<(), String> {
+fn build_lane(app: &AppHandle, id: &str, url: &str, sel: &str) -> Result<tauri::WebviewWindow, String> {
     // The id is a window label, a data-dir name, and the macOS store identifier (16 bytes), so keep it short and plain.
     if id.is_empty() || id.len() > 16 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
         return Err("bad lane id".into());
-    }
-    if app.get_webview_window(&id).is_some() {
-        return Ok(());
     }
     let url: tauri::Url = url.parse().map_err(|e| format!("{e}"))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err("lane url must be http(s)".into());
     }
-    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join(&id);
-    let b = WebviewWindowBuilder::new(&app, &id, WebviewUrl::External(url))
-        .title(&id)
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join(id);
+    let b = WebviewWindowBuilder::new(app, id, WebviewUrl::External(url))
+        .title(id)
         .visible(false) // lane_show reveals it once the page has loaded
         // Tauri's default 800x600 sits on chat sites' mobile/desktop breakpoint: ChatGPT's sidebar flickers open and
         // shut there. Desktop size keeps every site (and its selectors) on the desktop layout.
@@ -38,7 +34,11 @@ async fn lane_open(app: AppHandle, id: String, url: String, sel: String) -> Resu
         .center()
         .data_directory(data_dir)
         .background_throttling(BackgroundThrottlingPolicy::Disabled)
-        .initialization_script(init_script(&sel)?);
+        .initialization_script(init_script(sel)?);
+    // Google refuses sign-in in embedded webviews by user agent, and WKWebView's lacks the Safari token.
+    // ponytail: fixed Safari version string; bump it if Google starts rejecting it.
+    #[cfg(target_os = "macos")]
+    let b = b.user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15");
     // macOS ignores data_directory; a per-provider store id keeps cookies apart (macOS 14+).
     #[cfg(target_os = "macos")]
     let b = {
@@ -50,7 +50,7 @@ async fn lane_open(app: AppHandle, id: String, url: String, sel: String) -> Resu
     let win = b.build().map_err(|e| e.to_string())?;
     // The close button hides the window instead of destroying it, so the frontend can still look at the page
     // to learn whether the login worked, then close the lane itself.
-    let (app, label) = (app.clone(), id.clone());
+    let (app, label) = (app.clone(), id.to_string());
     let w = win.clone();
     win.on_window_event(move |e| {
         if let tauri::WindowEvent::CloseRequested { api, .. } = e {
@@ -59,6 +59,70 @@ async fn lane_open(app: AppHandle, id: String, url: String, sel: String) -> Resu
             let _ = app.emit_to("main", "lane-hidden", &label);
         }
     });
+    Ok(win)
+}
+
+// Shared Google session: the "google" lane holds the one real Google sign-in. Its google.com cookies are copied
+// into each provider lane as it opens, so "Continue with Google" on a provider site finds the account.
+// Stores stay separate; only these cookies move, and only Rust moves them (provider pages have no capability).
+const GOOGLE: &str = "google";
+static GOOGLE_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+
+// Hidden unless the frontend shows it. Locked so lanes opening together do not both build the window.
+async fn google_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
+    let _guard = GOOGLE_LOCK.get_or_init(Default::default).lock().await;
+    match app.get_webview_window(GOOGLE) {
+        Some(w) => Ok(w),
+        None => build_lane(app, GOOGLE, "https://accounts.google.com/", "{}"),
+    }
+}
+
+fn google_cookies(w: &tauri::WebviewWindow) -> Result<Vec<tauri::webview::Cookie<'static>>, String> {
+    let all = w.cookies().map_err(|e| e.to_string())?;
+    Ok(all.into_iter().filter(|c| c.domain().is_some_and(|d| d.trim_start_matches('.').ends_with("google.com"))).collect())
+}
+
+async fn copy_google(app: &AppHandle, to: &tauri::WebviewWindow) -> Result<(), String> {
+    for c in google_cookies(&google_window(app).await?)? {
+        let _ = to.set_cookie(c);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn lane_open(app: AppHandle, id: String, url: String, sel: String, google: Option<bool>) -> Result<(), String> {
+    if app.get_webview_window(&id).is_some() {
+        return Ok(());
+    }
+    let win = build_lane(&app, &id, &url, &sel)?;
+    if google == Some(true) && id != GOOGLE {
+        // Best effort: a lane that misses the copy still opens, the user then signs in to Google on the site.
+        let _ = copy_google(&app, &win).await;
+    }
+    Ok(())
+}
+
+// Whether the google lane holds a Google login. SID is Google's session cookie; it only exists after sign-in.
+#[tauri::command]
+async fn google_signed_in(app: AppHandle) -> Result<bool, String> {
+    let Some(w) = app.get_webview_window(GOOGLE) else { return Ok(false) };
+    Ok(google_cookies(&w)?.iter().any(|c| c.name() == "SID"))
+}
+
+// Push the Google cookies into a lane that is already open (it was opened before the sign-in).
+#[tauri::command]
+async fn google_sync(app: AppHandle, id: String) -> Result<(), String> {
+    let to = app.get_webview_window(&id).ok_or("lane not open")?;
+    copy_google(&app, &to).await
+}
+
+// ponytail: lanes that already hold a copy keep it (Gemini's own login lives in it); only the shared session is dropped.
+#[tauri::command]
+async fn google_signout(app: AppHandle) -> Result<(), String> {
+    let w = google_window(&app).await?;
+    for c in google_cookies(&w)? {
+        let _ = w.delete_cookie(c);
+    }
     Ok(())
 }
 
@@ -164,7 +228,7 @@ fn auth_listen(app: AppHandle) -> Result<u16, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![lane_open, lane_eval, lane_show, lane_close, open_url, auth_listen, dev_log])
+        .invoke_handler(tauri::generate_handler![lane_open, google_signed_in, google_sync, google_signout, lane_eval, lane_show, lane_close, open_url, auth_listen, dev_log])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

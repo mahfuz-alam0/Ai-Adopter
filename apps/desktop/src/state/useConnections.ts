@@ -11,6 +11,8 @@ export const lanes = new LaneManager({})
 import.meta.hot?.accept(() => location.reload())
 
 const LOGINS = 'logins'
+const GOOGLE = 'google'
+lanes.google = localStorage.getItem(GOOGLE) === '1'
 const register = (p: Provider) => {
   lanes.ok[p.id] = JSON.parse(localStorage.getItem(LOGINS) ?? '{}')[p.id]
   lanes.urls[p.id] = p.url
@@ -35,7 +37,7 @@ export function useConnections(setStatus: (t: string) => void) {
   }, [providers])
   useEffect(() => {
     lanes.onDone = (id, ok) => {
-      setStatus(ok ? '' : `${lanes.names[id]} is not logged in. Click Log in and sign in with email or a code.`)
+      setStatus(ok ? '' : `${lanes.names[id]} is not logged in. Click Log in and sign in with email, a code or Continue with Google.`)
       sync()
     }
   }, [setStatus, sync])
@@ -48,6 +50,14 @@ export function useConnections(setStatus: (t: string) => void) {
     const t = setInterval(sync, 500)
     return () => clearInterval(t)
   }, [sync])
+
+  // Shared Google session: sign in once, then "Continue with Google" works on every AI site.
+  const [google, setGoogle] = useState(lanes.google)
+  const toggleGoogle = async () => {
+    const on = lanes.google ? await lanes.googleOut().then(() => false) : await lanes.googleLogin()
+    localStorage.setItem(GOOGLE, on ? '1' : '0')
+    setGoogle(on)
+  }
 
   const stateOf = (id: string): State => states[id] ?? lanes.state(id)
   // At least one AI can take a prompt right now.
@@ -80,8 +90,7 @@ export function useConnections(setStatus: (t: string) => void) {
     setProviders(next)
   }
 
-  return { providers, stateOf, ready, toggle, connect, remove, sync }
+  return { providers, stateOf, ready, toggle, connect, remove, sync, google, toggleGoogle: () => toggleGoogle().catch((e) => setStatus(String(e))) }
 }
 
-// Google refuses its sign-in inside embedded webviews, so provider logins must use email or code.
-export const LOGIN_HINT = 'Use email or a code: Google sign-in does not work inside app windows.'
+export const LOGIN_HINT = 'Use email or a code, or sign in to Google under Connections first and pick Continue with Google.'
