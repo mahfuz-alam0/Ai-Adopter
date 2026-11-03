@@ -9,7 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node src/lib/cross.test.ts"
+    "test": "node src/lib/cross.test.ts && node src/lib/devlog.test.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.4",

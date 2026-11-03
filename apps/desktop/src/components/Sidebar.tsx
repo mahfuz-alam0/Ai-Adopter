@@ -6,7 +6,7 @@ import { Mark, tint } from './Mark.tsx'
 import { StateLabel } from './StateLabel.tsx'
 
 export function Sidebar() {
-  const { providers, stateOf, ready, toggle, reset, setConnectOpen, account, remote } = useHub()
+  const { providers, stateOf, ready, toggle, remove, reset, setConnectOpen, account, remote } = useHub()
   const navigate = useNavigate()
   const waiting = providers.filter((p) => stateOf(p.id) === 'needs-user').length
 
@@ -70,6 +70,16 @@ export function Sidebar() {
                   Done
                 </Button>
               )}
+              <Button
+                variant="ghost"
+                size="icon"
+                title={`Remove ${p.name}`}
+                aria-label={`Remove ${p.name}`}
+                className="flex-none opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                onClick={() => void remove(p)}
+              >
+                ×
+              </Button>
             </li>
           )
         })}

@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { formatTrace } from './devlog.ts'
+import type { Marks, Polls, Req } from './devlog.ts'
 import type { Selectors } from './providers.ts'
 
 // cold = lane closed, last check found the prompt box. unknown = never checked. logged-out = last check found none.
@@ -13,6 +15,18 @@ export type Phase = 'idle' | 'connecting' | 'sending' | 'thinking' | 'writing' |
 export const canSend = (s: State) => s !== 'needs-user' && s !== 'logged-out' && s !== 'checking'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// Dev timing log: one Marks per lane for the run in flight (runs on a lane are serialized). See devlog.ts.
+const traces: Record<string, Marks | undefined> = {}
+const mark = (id: string, k: string) => {
+  const t = traces[id]
+  if (t) t[k] ||= Date.now()
+}
+// Printed in the page console and, via Rust, in the terminal running `npm run dev:tauri`.
+const devLog = (line: string) => {
+  console.info(line)
+  void invoke('dev_log', { line }).catch(() => undefined)
+}
 
 // eval_with_callback may never call back (page mid-navigation, script error on some OSes), so cap the wait.
 export async function evalJs<T>(id: string, js: string, timeoutMs = 10_000): Promise<T> {
@@ -62,9 +76,11 @@ export class LaneManager {
   // quiet = probe timeout in ms for a background run: a lane that is not ready is closed and the run fails, with no login window.
   run<T>(id: string, fn: () => Promise<T>, quiet?: number): Promise<T> {
     const prev = this.queue.get(id) ?? Promise.resolve()
+    const enq = Date.now()
     const next = prev
       .catch(() => undefined)
       .then(async () => {
+        traces[id] = { enq, start: Date.now() }
         await this.acquire(id, quiet)
         try {
           return await fn()
@@ -170,7 +186,11 @@ export class LaneManager {
   private async acquire(id: string, quiet?: number) {
     const lane = this.lanes.get(id)
     await this.open(id)
-    if (!lane || lane.state !== 'ready') await this.waitReady(id, quiet)
+    mark(id, 'opened')
+    const cold = !lane || lane.state !== 'ready'
+    if (cold) await this.waitReady(id, quiet)
+    mark(id, 'probed')
+    if (traces[id]) traces[id]!.cold = +cold
     this.lanes.set(id, { state: 'busy', lastUsed: Date.now() })
     await this.evict(id)
   }
@@ -217,9 +237,20 @@ export class LaneManager {
   }
 }
 
-interface ReadState { text: string; streaming: boolean; count: number; url: string; err: string }
+// net: 0 = no fetch stream seen since send, 1 = one is open, 2 = they all ended. at = page clock when read ran.
+interface ReadState { text: string; streaming: boolean; count: number; net: 0 | 1 | 2; url: string; err: string; at: number }
+interface FullRead extends ReadState { t: Record<string, number>; reqs: Req[] }
 
 const read = (lane: string) => evalJs<ReadState>(lane, 'window.__lane.read()')
+
+// Dev timing log. Fire and forget: it must not add its own eval round trip to the answer time.
+async function report(lane: string, polls: Polls) {
+  const m = traces[lane]
+  if (!m) return
+  const f = await evalJs<FullRead>(lane, 'window.__lane.read(true)')
+  for (const [k, v] of Object.entries(f.t)) m[k.startsWith('p') ? k : `p${k}`] = v // send/typed/click are in-page marks; preq/phead/pchunk/pend already carry the p
+  devLog(formatTrace(lane, !!m.cold, m, f.reqs, polls))
+}
 
 export async function ask(
   lane: string,
@@ -228,35 +259,66 @@ export async function ask(
   onPhase: (p: Phase) => void = () => undefined,
   timeoutMs = 180_000,
 ): Promise<{ text: string; url: string }> {
+  mark(lane, 'ask0')
+  const polls: Polls = { n: 0, rtt: 0, rttMax: 0, toPage: 0, toPageMax: 0, fromPage: 0, fromPageMax: 0 }
   onPhase('sending')
   const before = await read(lane)
+  mark(lane, 'preread')
   await evalJs(lane, `window.__lane.send(${JSON.stringify(prompt)}); "ok"`)
+  mark(lane, 'sentEval')
   onPhase('thinking')
 
   const deadline = Date.now() + timeoutMs
   let last = ''
   let quietSince = 0
   let writing = false
-  while (Date.now() < deadline) {
-    await sleep(100)
-    const s = await read(lane)
-    if (s.err) throw new Error(`${lane}: ${s.err}`)
-    if (s.count <= before.count) continue
-    if (s.text !== last) {
-      last = s.text
-      quietSince = 0 // text still moving, so a missing stop button does not mean done
-      if (s.text && !writing) {
-        writing = true
-        onPhase('writing')
+  let netEnded = false
+  try {
+    while (Date.now() < deadline) {
+      await sleep(50)
+      const t0 = Date.now()
+      const s = await read(lane)
+      const t1 = Date.now()
+      const at = s.at ?? t1 // a lane opened before this build has no page clock
+      const [rtt, to, from] = [t1 - t0, at - t0, t1 - at] // same machine, so one clock
+      polls.n++
+      polls.rtt += rtt
+      polls.rttMax = Math.max(polls.rttMax, rtt)
+      polls.toPage += to
+      polls.toPageMax = Math.max(polls.toPageMax, to)
+      polls.fromPage += from
+      polls.fromPageMax = Math.max(polls.fromPageMax, from)
+      if (s.err) throw new Error(`${lane}: ${s.err}`)
+      if (s.count <= before.count) continue
+      mark(lane, 'firstReply')
+      if (s.text !== last) {
+        last = s.text
+        quietSince = 0 // text still moving, so a missing stop button does not mean done
+        if (s.text && !writing) {
+          writing = true
+          onPhase('writing')
+          mark(lane, 'firstText')
+        }
+        if (traces[lane]) traces[lane]!.lastChange = t1
+        onDelta(s.text)
       }
-      onDelta(s.text)
+      if (s.streaming) {
+        quietSince = 0
+        continue
+      }
+      // The stream ending is the real "done"; the short wait only lets the page paint the last tokens.
+      // Without a stream signal (site does not use fetch SSE) fall back to waiting for the page to go quiet.
+      if (s.net === 2 && !netEnded) {
+        quietSince = 0
+        mark(lane, 'netSeen')
+      }
+      netEnded = s.net === 2
+      quietSince ||= Date.now()
+      if (Date.now() - quietSince > (netEnded ? 120 : 600)) return { text: last, url: s.url } // every ms here is added to each answer
     }
-    if (s.streaming) {
-      quietSince = 0
-      continue
-    }
-    quietSince ||= Date.now()
-    if (Date.now() - quietSince > 600) return { text: last, url: s.url } // every ms here is added to each answer
+    throw new Error(`${lane} timed out`)
+  } finally {
+    mark(lane, 'done')
+    void report(lane, polls).catch(() => undefined)
   }
-  throw new Error(`${lane} timed out`)
 }

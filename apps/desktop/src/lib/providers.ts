@@ -1,4 +1,5 @@
-export interface Selectors { input?: string; send?: string; stop?: string; reply?: string }
+// out: something only a logged-out visitor sees (a Sign in link). For sites that show the prompt box to guests.
+export interface Selectors { input?: string; send?: string; stop?: string; reply?: string; out?: string }
 export interface Provider { id: string; name: string; url: string; color: string; sel?: Selectors }
 
 // Selectors drift. Verify against the live page (DevTools) when a card goes red.
@@ -29,6 +30,8 @@ export const PRESETS: Provider[] = [
       send: 'button[aria-label="Send message"]',
       stop: 'button[aria-label="Stop response"]',
       reply: 'model-response message-content',
+      // Checked against the logged-out page HTML: Gemini serves the full prompt box to guests, plus Google's Sign in link.
+      out: 'a[href*="accounts.google.com/ServiceLogin"]',
     },
   },
   { id: 'grok', name: 'Grok', url: 'https://grok.com/', color: '#8f8eab' },

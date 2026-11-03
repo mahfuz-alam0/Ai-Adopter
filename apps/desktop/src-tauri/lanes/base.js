@@ -12,13 +12,50 @@
   const $ = (s) => document.querySelector(s)
   const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
+  // The reply streams over fetch as SSE/ndjson on most sites. Stream end is the exact "done" signal, so the
+  // caller need not wait for the page to look quiet. Text still comes from the DOM: every site's stream format differs.
+  // net.t / net.reqs are the dev timing log (see lib/devlog.ts): when each step happened in the page, and every fetch after send.
+  const net = { open: 0, seen: 0, t: {}, reqs: [] }
+  const realFetch = window.fetch
+  if (realFetch) {
+    window.fetch = async function (...args) {
+      const t0 = Date.now()
+      const res = await realFetch.apply(this, args)
+      try {
+        const t = net.t
+        if (t.send && net.reqs.length < 40) net.reqs.push([new URL(res.url).pathname.slice(-60), t0 - t.send, Date.now() - t0, res.status])
+        if (res.body && /event-stream|ndjson/i.test(res.headers.get('content-type') || '')) {
+          net.open++
+          net.seen++
+          if (t.send && !t.preq) {
+            t.preq = t0
+            t.phead = Date.now()
+          }
+          const r = res.clone().body.getReader()
+          void (async () => {
+            try {
+              while (!(await r.read()).done) if (!t.pchunk) t.pchunk = Date.now()
+            } catch {}
+            if (!--net.open) t.pend = Date.now()
+          })()
+        }
+      } catch {}
+      return res
+    }
+  }
+
   window.__lane = {
-    ready: () => JSON.stringify(Boolean($(S.input))),
+    // A prompt box alone is not a login: some sites show it to guests, and S.out marks those.
+    ready: () => JSON.stringify(Boolean($(S.input)) && !(S.out && $(S.out))),
 
     async send(text) {
       try {
+        net.seen = 0
+        net.reqs = []
+        const t = (net.t = { send: Date.now() })
         $(S.input).focus()
         document.execCommand('insertText', false, text)
+        t.typed = Date.now()
         // The button shows up a frame after the input event. None after 400ms: the site sends on Enter,
         // so do not burn seconds waiting for a button that never comes.
         let btn
@@ -29,20 +66,26 @@
         }
         if (btn) btn.click()
         else $(S.input).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
+        t.click = Date.now()
       } catch (e) {
         window.__lane.err = String(e)
       }
     },
 
-    read() {
+    // full adds the dev timing log; polls leave it out to stay small.
+    read(full) {
       const replies = document.querySelectorAll(S.reply)
       const last = replies[replies.length - 1]
       return JSON.stringify({
         text: last ? last.innerText : '',
         streaming: Boolean($(S.stop)),
         count: replies.length,
+        // A stream started since send and none is still open. 0 = no stream seen: the site does not stream over fetch SSE.
+        net: net.seen ? (net.open ? 1 : 2) : 0,
         url: location.href,
         err: window.__lane.err || '',
+        at: Date.now(),
+        ...(full ? { t: net.t, reqs: net.reqs } : {}),
       })
     },
   }

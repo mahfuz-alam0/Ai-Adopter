@@ -87,6 +87,14 @@ async fn lane_close(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
+// Dev timing log from the frontend, printed in the terminal running `npm run dev:tauri`. Release builds stay silent.
+#[tauri::command]
+fn dev_log(line: String) {
+    if cfg!(debug_assertions) {
+        eprintln!("{line}");
+    }
+}
+
 // Open a sign-in page in the user's default browser. Google refuses sign-in inside embedded webviews.
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -151,7 +159,7 @@ fn auth_listen(app: AppHandle) -> Result<u16, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![lane_open, lane_eval, lane_show, lane_close, open_url, auth_listen])
+        .invoke_handler(tauri::generate_handler![lane_open, lane_eval, lane_show, lane_close, open_url, auth_listen, dev_log])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
