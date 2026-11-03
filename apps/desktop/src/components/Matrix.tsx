@@ -11,7 +11,7 @@ const cell = 'border-b border-line px-4 py-1.5 text-center'
 
 export function Matrix({ data }: { data: MatrixData }) {
   return (
-    <div className="max-h-[38%] flex-none overflow-auto select-text">
+    <div className="overflow-x-auto select-text">
       <table className="mx-auto mt-4 border-separate border-spacing-0 rounded-[10px] border border-line bg-panel text-[12.5px]">
         <caption className="caption-top pb-2 text-muted">Reviewer (row) on answer (column)</caption>
         <thead>

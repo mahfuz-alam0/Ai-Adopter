@@ -6,6 +6,9 @@ import type { Selectors } from './providers.ts'
 export type State = 'unknown' | 'logged-out' | 'cold' | 'ready' | 'busy' | 'needs-user' | 'checking'
 interface Lane { state: State; lastUsed: number }
 
+// What one prompt is doing in a lane, for the progress display.
+export type Phase = 'idle' | 'connecting' | 'sending' | 'thinking' | 'writing' | 'done' | 'error'
+
 // A lane that has no window open, or whose window is waiting on the user, cannot take a prompt.
 export const canSend = (s: State) => s !== 'needs-user' && s !== 'logged-out' && s !== 'checking'
 
@@ -90,6 +93,31 @@ export class LaneManager {
     await this.loaded(id)
     await invoke('lane_show', { id, title: `Log in to ${this.names[id] ?? id}` })
     this.lanes.set(id, { state: 'needs-user', lastUsed: Date.now() })
+    void this.watch(id)
+  }
+
+  private watching = new Set<string>()
+
+  // Close the login window by itself once the login worked: the prompt box shows up after having been absent.
+  // Requiring "absent first" keeps sites that show a prompt box to logged-out visitors from closing at once;
+  // there the user clicks Done.
+  private async watch(id: string) {
+    if (this.watching.has(id)) return
+    this.watching.add(id)
+    let sawLogin = this.ok[id] === false
+    let streak = 0
+    try {
+      while (this.state(id) === 'needs-user') {
+        await sleep(1_000)
+        if (this.state(id) !== 'needs-user') return
+        if (!(await this.isReady(id))) {
+          sawLogin = true
+          streak = 0
+        } else if (sawLogin && ++streak >= 2) return void (await this.finish(id))
+      }
+    } finally {
+      this.watching.delete(id)
+    }
   }
 
   // The user is done with the login window. Whether it worked is only visible in the page, so look before closing.
@@ -132,11 +160,14 @@ export class LaneManager {
     await this.evict(id)
   }
 
+  private async isReady(id: string) {
+    return (await evalJs<boolean>(id, 'window.__lane ? window.__lane.ready() : "false"', 3_000).catch(() => false)) === true
+  }
+
   private async probe(id: string, timeoutMs: number) {
     const end = Date.now() + timeoutMs
     while (Date.now() < end) {
-      const ok = await evalJs<boolean>(id, 'window.__lane ? window.__lane.ready() : "false"').catch(() => false)
-      if (ok === true) return true
+      if (await this.isReady(id)) return true
       await sleep(500)
     }
     return false
@@ -173,14 +204,18 @@ export async function ask(
   lane: string,
   prompt: string,
   onDelta: (text: string) => void,
+  onPhase: (p: Phase) => void = () => undefined,
   timeoutMs = 180_000,
 ): Promise<{ text: string; url: string }> {
+  onPhase('sending')
   const before = await read(lane)
   await evalJs(lane, `window.__lane.send(${JSON.stringify(prompt)}); "ok"`)
+  onPhase('thinking')
 
   const deadline = Date.now() + timeoutMs
   let last = ''
   let quietSince = 0
+  let writing = false
   while (Date.now() < deadline) {
     await sleep(250)
     const s = await read(lane)
@@ -188,6 +223,10 @@ export async function ask(
     if (s.count <= before.count) continue
     if (s.text !== last) {
       last = s.text
+      if (s.text && !writing) {
+        writing = true
+        onPhase('writing')
+      }
       onDelta(s.text)
     }
     if (s.streaming) {
