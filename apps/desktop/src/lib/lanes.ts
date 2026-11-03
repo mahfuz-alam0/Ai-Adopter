@@ -148,7 +148,11 @@ export class LaneManager {
   async finish(id: string) {
     if (this.state(id) !== 'needs-user') return // already handled (Done button, then the hide event)
     this.lanes.set(id, { state: 'checking', lastUsed: Date.now() })
-    const ok = await this.probe(id, 5_000)
+    // Closing right after signing in lands mid-redirect (auth page, then a full reload of the app). A 5s probe there
+    // recorded a fresh login as logged-out, so let the page settle and give the app time to draw its prompt box.
+    await this.loaded(id)
+    const ok = await this.probe(id, 10_000)
+    devLog(`${id} login check: ${ok ? 'prompt box found' : 'no prompt box'} at ${await evalJs<string>(id, 'location.href', 2_000).catch(() => '?')}`)
     this.ok[id] = ok
     await this.close(id).catch(() => undefined)
     if (ok) this.warm([id])

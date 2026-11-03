@@ -59,7 +59,7 @@ export function ConnectDialog() {
         ))}
       </div>
       <details className="group/c">
-        <summary className="flex cursor-default list-none items-center gap-1.5 py-1 text-muted hover:text-fg [&::-webkit-details-marker]:hidden">
+        <summary className="flex list-none items-center gap-1.5 py-1 text-muted hover:text-fg [&::-webkit-details-marker]:hidden">
           <span aria-hidden="true" className="inline-block transition-transform group-open/c:rotate-90 motion-reduce:transition-none">
             ›
           </span>

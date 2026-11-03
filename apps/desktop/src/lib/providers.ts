@@ -21,6 +21,8 @@ export const PRESETS: Provider[] = [
       send: 'button[data-testid="send-button"]',
       stop: 'button[data-testid="stop-button"]',
       reply: '[data-message-author-role="assistant"]',
+      // Guests get the prompt box too; the header Log in button marks them. Unverified guess.
+      out: 'button[data-testid="login-button"]',
     },
   },
   {
@@ -46,5 +48,7 @@ export const PRESETS: Provider[] = [
 export const customId = () => `x-${Math.random().toString(36).slice(2, 10)}`
 
 const KEY = 'providers'
-export const loadProviders = (): Provider[] => JSON.parse(localStorage.getItem(KEY) ?? '[]')
+// Presets take their selectors from this file, not the saved copy, so a selector fix reaches AIs added before it.
+export const loadProviders = (): Provider[] =>
+  JSON.parse(localStorage.getItem(KEY) ?? '[]').map((p: Provider) => ({ ...p, sel: PRESETS.find((x) => x.id === p.id)?.sel ?? p.sel }))
 export const saveProviders = (all: Provider[]) => localStorage.setItem(KEY, JSON.stringify(all))

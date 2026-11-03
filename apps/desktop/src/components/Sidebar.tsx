@@ -151,7 +151,7 @@ export function Sidebar() {
                 <button
                   type="button"
                   aria-label={`${p.name}: ${STATE_LABEL[s]}`}
-                  className={`grid w-full cursor-default place-items-center rounded-[9px] py-1.5 ${focusRing}`}
+                  className={`grid w-full place-items-center rounded-[9px] py-1.5 ${focusRing}`}
                   onClick={(e) => {
                     const r = e.currentTarget.getBoundingClientRect()
                     openMenu(p, r.right + 6, r.top)

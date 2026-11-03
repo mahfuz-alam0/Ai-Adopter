@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* The only stylesheet: design tokens and keyframes. Everything else is utility classes in the components. */
+/* The only stylesheet: design tokens, keyframes and the button cursor. Everything else is utility classes in the components. */
 @theme {
   --color-bg: #f3f4f8;
   --color-side: #eaecf2;
@@ -37,6 +37,10 @@
 }
 
 :root { color-scheme: light dark }
+/* Tailwind 4 resets buttons to the arrow cursor. One rule here, so a new button cannot forget the hand. */
+@layer base {
+  button:not(:disabled), [role="button"]:not([aria-disabled="true"]), summary { cursor: pointer }
+}
 @media (prefers-color-scheme: dark) {
   :root {
     --color-bg: #0a0c11;

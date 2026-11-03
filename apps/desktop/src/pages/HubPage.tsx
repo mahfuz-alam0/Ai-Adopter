@@ -36,7 +36,7 @@ export function HubPage() {
             data-wire="add"
             title="Connect an AI"
             aria-label="Connect an AI"
-            className={`relative grid size-11 flex-none cursor-default place-items-center self-start rounded-xl border-[1.5px] border-dashed border-line2 text-lg leading-none text-muted transition-colors before:absolute before:-bottom-[5px] before:left-1/2 before:-ml-[5px] before:size-2.5 before:rounded-full before:bg-line2 before:shadow-[0_0_0_3px_var(--color-bg)] first:ml-auto last:mr-auto hover:border-accent hover:text-fg ${focusRing}`}
+            className={`relative grid size-11 flex-none place-items-center self-start rounded-xl border-[1.5px] border-dashed border-line2 text-lg leading-none text-muted transition-colors before:absolute before:-bottom-[5px] before:left-1/2 before:-ml-[5px] before:size-2.5 before:rounded-full before:bg-line2 before:shadow-[0_0_0_3px_var(--color-bg)] first:ml-auto last:mr-auto hover:border-accent hover:text-fg ${focusRing}`}
             onClick={() => setConnectOpen(true)}
           >
             +

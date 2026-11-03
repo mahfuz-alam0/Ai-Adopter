@@ -2,14 +2,19 @@
 // Every method returns a JSON string and never throws: exceptions are invisible to eval_with_callback on Windows.
 (() => {
   // Best-effort guesses for sites with no verified selectors; entries in window.__SEL win.
-  const S = {
+  const D = {
     input: 'textarea, div[contenteditable="true"], [role="textbox"]',
     send: 'button[type="submit"], button[aria-label*="send" i], button[data-testid*="send" i]',
     stop: 'button[aria-label*="stop" i], button[data-testid*="stop" i]',
     reply: '[data-message-author-role="assistant"], [class*="markdown"], [class*="assistant" i]',
-    ...window.__SEL,
   }
+  const S = { ...D, ...window.__SEL }
   const $ = (s) => document.querySelector(s)
+  // First match that is laid out. Sites keep hidden copies (ChatGPT's fallback textarea), which cannot take text.
+  const shown = (s) => [...document.querySelectorAll(s)].find((e) => e.getClientRects().length)
+  // The prompt box is the login signal, and a redesign breaks the preset input selector first. Without this
+  // fallback a logged-in lane read as logged out, so the login window never closed and sending stayed off.
+  const box = () => $(S.input) || shown(D.input)
   const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
   // Lanes run in hidden windows. WebKit reports a hidden page as hidden and pauses requestAnimationFrame there,
@@ -61,14 +66,16 @@
 
   window.__lane = {
     // A prompt box alone is not a login: some sites show it to guests, and S.out marks those.
-    ready: () => JSON.stringify(Boolean($(S.input)) && !(S.out && $(S.out))),
+    // Only a visible S.out counts, so a hidden copy in a logged-in page does not mark it as a guest.
+    ready: () => JSON.stringify(Boolean(box()) && !(S.out && shown(S.out))),
 
     async send(text) {
       try {
         net.seen = 0
         net.reqs = []
         const t = (net.t = { send: Date.now() })
-        $(S.input).focus()
+        const input = box()
+        input.focus()
         document.execCommand('insertText', false, text)
         t.typed = Date.now()
         // The button shows up a frame after the input event. None after 400ms: the site sends on Enter,
@@ -80,7 +87,7 @@
           await wait(25)
         }
         if (btn) btn.click()
-        else $(S.input).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
+        else input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
         t.click = Date.now()
       } catch (e) {
         window.__lane.err = String(e)

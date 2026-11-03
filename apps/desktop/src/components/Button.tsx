@@ -22,7 +22,7 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 // Also used by router links that should look like buttons.
 export const buttonClass = (variant: keyof typeof VARIANT = 'default', size: keyof typeof SIZE = 'md', className = '') =>
-  `cursor-default rounded-lg border transition-colors disabled:opacity-50 ${focusRing} ${VARIANT[variant]} ${SIZE[size]} ${className}`
+  `rounded-lg border transition-colors disabled:opacity-50 ${focusRing} ${VARIANT[variant]} ${SIZE[size]} ${className}`
 
 export function Button({ variant = 'default', size = 'md', type = 'button', className = '', ...rest }: Props) {
   return <button type={type} className={buttonClass(variant, size, className)} {...rest} />

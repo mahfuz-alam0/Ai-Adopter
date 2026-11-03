@@ -44,7 +44,7 @@ function Reply({ p, turn, track, reviewing }: { p: Provider; turn: Turn; track?:
         </div>
         {(review !== undefined || reviewError) && (
           <details open={reviewing} className="mt-2 rounded-xl border border-dashed border-line2 px-3.5 py-2 text-muted">
-            <summary className="cursor-default text-xs font-semibold text-fg">Review of the others{reviewing ? ` · ${PHASE_LABEL[phase].toLowerCase()}` : ''}</summary>
+            <summary className="text-xs font-semibold text-fg">Review of the others{reviewing ? ` · ${PHASE_LABEL[phase].toLowerCase()}` : ''}</summary>
             <div className="mt-2 text-[13px]/[1.6] select-text">
               {reviewError ? <p className="text-bad">{reviewError}</p> : review ? <p className={`whitespace-pre-wrap ${reviewing && phase === 'writing' ? CARET : ''}`}>{review}</p> : <Pending phase={phase} />}
             </div>
