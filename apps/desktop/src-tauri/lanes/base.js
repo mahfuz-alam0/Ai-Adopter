@@ -89,6 +89,11 @@
         if (btn) btn.click()
         else input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
         t.click = Date.now()
+        // Text still in the box and nothing generating means the site ignored the click (a hidden window drops it
+        // while the editor is still syncing). A real send clears the box at once, so this exits on the first check.
+        const left = () => ((box() || {}).value ?? (box() || {}).innerText ?? '').trim()
+        for (let i = 0; i < 24 && left() && !$(S.stop); i++) await wait(25)
+        if (left() && !$(S.stop)) box().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
       } catch (e) {
         window.__lane.err = String(e)
       }

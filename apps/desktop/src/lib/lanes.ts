@@ -271,6 +271,7 @@ export async function ask(
   await evalJs(lane, `window.__lane.send(${JSON.stringify(prompt)}); "ok"`)
   mark(lane, 'sentEval')
   onPhase('thinking')
+  const sentAt = Date.now()
 
   const deadline = Date.now() + timeoutMs
   let last = ''
@@ -293,6 +294,11 @@ export async function ask(
       polls.fromPage += from
       polls.fromPageMax = Math.max(polls.fromPageMax, from)
       if (s.err) throw new Error(`${lane}: ${s.err}`)
+      // A prompt that landed shows a stop button, an open stream or a new reply within seconds. None of them after 20s
+      // means it never went out; fail now instead of spinning to the full timeout.
+      if (s.count <= before.count && !s.streaming && !s.net && Date.now() - sentAt > 20_000) {
+        throw new Error(`${lane}: no reply started, the prompt was probably not sent`)
+      }
       if (s.count <= before.count) continue
       mark(lane, 'firstReply')
       if (s.text !== last) {
