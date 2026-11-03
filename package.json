@@ -5,7 +5,11 @@
   "workspaces": ["apps/*"],
   "scripts": {
     "dev": "turbo dev",
+    "dev:tauri": "turbo dev --filter=desktop",
+    "dev:server": "turbo dev --filter=server",
     "build": "turbo build",
+    "build:tauri": "npm run tauri build -w desktop",
+    "build:server": "turbo build --filter=server",
     "test": "turbo test"
   },
   "devDependencies": {
