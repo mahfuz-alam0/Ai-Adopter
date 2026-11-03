@@ -19,12 +19,14 @@
       try {
         $(S.input).focus()
         document.execCommand('insertText', false, text)
-        for (let i = 0; i < 50; i++) {
-          const btn = $(S.send)
-          if (btn && !btn.disabled) break
-          await wait(100)
+        // The button shows up a frame after the input event. None after 400ms: the site sends on Enter,
+        // so do not burn seconds waiting for a button that never comes.
+        let btn
+        for (let i = 0; i < 120; i++) {
+          btn = $(S.send)
+          if (btn ? !btn.disabled : i >= 16) break
+          await wait(25)
         }
-        const btn = $(S.send)
         if (btn) btn.click()
         else $(S.input).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
       } catch (e) {

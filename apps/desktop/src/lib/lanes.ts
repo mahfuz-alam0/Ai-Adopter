@@ -52,19 +52,19 @@ export class LaneManager {
   constructor(
     public urls: Record<string, string>,
     private maxLive = 4,
-    private idleMs = 180_000,
+    private idleMs = 1_800_000, // a closed lane costs a full page load on the next prompt, so keep it long
   ) {
     setInterval(() => void this.sweep(), 15_000)
     // The window's close button only hides it (Rust), which is the same as clicking Done.
     void listen<string>('lane-hidden', (e) => void this.finish(e.payload)).catch(() => undefined) // no Tauri in plain-browser dev
   }
 
-  run<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  run<T>(id: string, fn: () => Promise<T>, quiet = false): Promise<T> {
     const prev = this.queue.get(id) ?? Promise.resolve()
     const next = prev
       .catch(() => undefined)
       .then(async () => {
-        await this.acquire(id)
+        await this.acquire(id, quiet)
         try {
           return await fn()
         } finally {
@@ -73,6 +73,13 @@ export class LaneManager {
       })
     this.queue.set(id, next)
     return next
+  }
+
+  // Load known-good lanes in the background so the first prompt skips the page load. Never shows a window.
+  warm(ids: string[]) {
+    for (const id of ids.slice(0, this.maxLive)) {
+      if (this.state(id) === 'cold') void this.run(id, async () => undefined, true).catch(() => undefined)
+    }
   }
 
   state(id: string): State {
@@ -127,6 +134,7 @@ export class LaneManager {
     const ok = await this.probe(id, 5_000)
     this.ok[id] = ok
     await this.close(id).catch(() => undefined)
+    if (ok) this.warm([id])
     this.onDone?.(id, ok)
   }
 
@@ -152,10 +160,10 @@ export class LaneManager {
     }
   }
 
-  private async acquire(id: string) {
+  private async acquire(id: string, quiet: boolean) {
     const lane = this.lanes.get(id)
     await this.open(id)
-    if (!lane || lane.state !== 'ready') await this.waitReady(id)
+    if (!lane || lane.state !== 'ready') await this.waitReady(id, 20_000, quiet)
     this.lanes.set(id, { state: 'busy', lastUsed: Date.now() })
     await this.evict(id)
   }
@@ -168,14 +176,20 @@ export class LaneManager {
     const end = Date.now() + timeoutMs
     while (Date.now() < end) {
       if (await this.isReady(id)) return true
-      await sleep(500)
+      await sleep(200)
     }
     return false
   }
 
-  private async waitReady(id: string, timeoutMs = 20_000) {
-    const ok = (this.ok[id] = await this.probe(id, timeoutMs))
+  // quiet (background warm-up): a slow page must not flip a known login to logged-out or pop a window.
+  private async waitReady(id: string, timeoutMs = 20_000, quiet = false) {
+    const ok = await this.probe(id, timeoutMs)
+    if (!quiet || ok) this.ok[id] = ok
     if (ok) return
+    if (quiet) {
+      await this.close(id)
+      throw new Error(`${id} did not load`)
+    }
     await this.login(id)
     throw new NeedsUser(id)
   }
@@ -217,7 +231,7 @@ export async function ask(
   let quietSince = 0
   let writing = false
   while (Date.now() < deadline) {
-    await sleep(250)
+    await sleep(100)
     const s = await read(lane)
     if (s.err) throw new Error(`${lane}: ${s.err}`)
     if (s.count <= before.count) continue

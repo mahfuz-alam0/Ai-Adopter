@@ -22,7 +22,7 @@ function Reply({ p, turn, track, reviewing }: { p: Provider; turn: Turn; track?:
   const reviewError = turn.errors[`${id}:review`]
 
   return (
-    <section style={tint(p.color)} className="flex gap-3">
+    <section style={tint(p.color)} className="flex animate-rise gap-3 motion-reduce:animate-none">
       <Mark p={p} />
       <div className="min-w-0 flex-1">
         <header className="mb-1 flex items-center gap-2">
@@ -69,7 +69,7 @@ export function Chat() {
   return (
     <div
       ref={box}
-      className="mt-3 min-h-0 flex-1 overflow-y-auto border-t border-line px-1 pt-4"
+      className="min-h-0 flex-1 overflow-y-auto border-b border-line bg-panel2/40 px-6 pt-5"
       onScroll={(e) => {
         const el = e.currentTarget
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
@@ -80,7 +80,7 @@ export function Chat() {
           {turns.map((t, i) => {
             const live = i === turns.length - 1
             return (
-              <article key={t.n} className="flex flex-col gap-3">
+              <article key={t.n} className="flex animate-rise flex-col gap-3 motion-reduce:animate-none">
                 <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-accent/15 px-4 py-2.5 text-[13.5px]/[1.6] whitespace-pre-wrap select-text">{t.q}</div>
                 {t.via && <span className="-mt-2 text-right text-[11px] text-dim">via {t.via}</span>}
                 {t.ids.map((id) => {
@@ -93,7 +93,7 @@ export function Chat() {
           })}
         </div>
       ) : (
-        <p className="mx-auto mt-6 max-w-sm text-center text-muted">Ask something above. Each answer appears here, labelled with the AI that wrote it.</p>
+        <p className="mx-auto mt-6 max-w-sm text-center text-muted">Ask something below. Each answer appears here, labelled with the AI that wrote it.</p>
       )}
     </div>
   )

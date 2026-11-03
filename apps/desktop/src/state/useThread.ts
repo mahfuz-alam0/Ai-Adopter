@@ -6,7 +6,7 @@ import type { Verdict } from '../lib/cross.ts'
 import { LOGIN_HINT, lanes } from './useConnections.ts'
 import type { useConnections } from './useConnections.ts'
 
-export type Mode = 'parallel' | 'cross'
+export type Mode = 'auto' | 'parallel' | 'cross'
 // cells[reviewer][answer]; null marks the diagonal (a model does not review itself).
 export interface MatrixData { names: string[]; cells: (Verdict | undefined | null)[][] }
 type Texts = Record<string, string>
@@ -108,9 +108,21 @@ export function useThread(conn: ReturnType<typeof useConnections>, setStatus: (t
   }
 
   // `via`, `only` and `mode` let a remote request override the UI: who asked, which AIs, which mode.
+  // Auto: one AI answers, the quickest so far (the first ready one until any has been timed).
+  // ponytail: speed is the only signal, in memory only; route by task (code, search, long reasoning) if that matters.
+  function quickest(ids: string[]) {
+    const avg = (id: string) => {
+      const ms = turns.flatMap((t) => t.ms[id] ?? [])
+      return ms.length ? ms.reduce((a, b) => a + b) / ms.length : Infinity
+    }
+    return ids.reduce((best, id) => (avg(id) < avg(best) ? id : best))
+  }
+
   async function submit(q: string, opt: { mode?: Mode; only?: string[]; via?: string } = {}): Promise<Outcome> {
     const none = { answers: {}, errors: {}, matrix: null }
-    const ids = providers.map((p) => p.id).filter((id) => canSend(stateOf(id)) && (!opt.only || opt.only.includes(id)))
+    const m = opt.mode ?? mode
+    let ids = providers.map((p) => p.id).filter((id) => canSend(stateOf(id)) && (!opt.only || opt.only.includes(id)))
+    if (m === 'auto' && ids.length) ids = [quickest(ids)]
     if (!ids.length) {
       const error = providers.length ? 'No AI is logged in. Open Connections and log in to one first.' : 'Connect an AI first.'
       setStatus(error)
@@ -118,7 +130,7 @@ export function useThread(conn: ReturnType<typeof useConnections>, setStatus: (t
     }
     setRunning(true)
     const n = ++count.current
-    const cross = (opt.mode ?? mode) === 'cross'
+    const cross = m === 'cross'
     try {
       setTurns((ts) => [...ts, { n, q, via: opt.via, ids, answers: {}, reviews: {}, errors: {}, ms: {}, matrix: null }])
       setTracks({})
@@ -150,6 +162,7 @@ export function useThread(conn: ReturnType<typeof useConnections>, setStatus: (t
     history.current = []
     for (const p of providers) lanes.urls[p.id] = p.url
     await lanes.closeAll().catch((e) => setStatus(String(e)))
+    lanes.warm(providers.map((p) => p.id))
     setTurns([])
     setTracks({})
     setRun({ stage: 'idle', cross: false, t0: 0 })

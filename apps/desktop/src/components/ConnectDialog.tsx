@@ -4,7 +4,7 @@ import { PRESETS, customId } from '../lib/providers.ts'
 import type { Provider, Selectors } from '../lib/providers.ts'
 import { useHub } from '../state/HubContext.tsx'
 import { Button, focusRing } from './Button.tsx'
-import { tint } from './Mark.tsx'
+import { Mark, tint } from './Mark.tsx'
 
 const Field = ({ label, ...rest }: { label: string } & InputHTMLAttributes<HTMLInputElement>) => (
   <label className="mt-2.5 block text-xs text-muted">
@@ -46,20 +46,25 @@ export function ConnectDialog() {
     <dialog
       ref={ref}
       onClose={() => setConnectOpen(false)}
-      className="m-auto w-[min(460px,90vw)] rounded-2xl border border-line2 bg-panel p-[22px] text-fg shadow-lift backdrop:bg-black/50 backdrop:backdrop-blur-md"
+      className="m-auto max-h-[90vh] w-[min(460px,90vw)] overflow-auto rounded-2xl border border-line2 bg-panel p-[22px] text-fg shadow-lift open:animate-rise backdrop:bg-black/50 backdrop:backdrop-blur-md motion-reduce:animate-none"
     >
       <h3 className="text-base font-bold">Connect an AI</h3>
       <p className="mb-4 text-muted">Pick one, then log in once in the window that opens.</p>
-      <div className="mb-3.5 grid grid-cols-2 gap-2 empty:after:col-span-full empty:after:text-muted empty:after:content-['Every_built-in_AI_is_already_connected.']">
+      <div className="mb-3 grid grid-cols-3 gap-2 empty:after:col-span-full empty:after:text-muted empty:after:content-['Every_built-in_AI_is_already_connected.']">
         {PRESETS.filter((p) => !providers.some((x) => x.id === p.id)).map((p) => (
-          <Button key={p.id} size="lg" style={tint(p.color)} className="flex items-center gap-2.5 text-left" onClick={() => pick(p)}>
-            <span className="size-2.5 rounded-full bg-(--c)" />
+          <Button key={p.id} size="lg" style={tint(p.color)} className="group flex flex-col items-center gap-2 py-3.5 text-[13px] enabled:hover:border-(--c)/60" onClick={() => pick(p)}>
+            <Mark p={p} size="lg" className="transition-transform group-hover:scale-110 motion-reduce:transition-none" />
             {p.name}
           </Button>
         ))}
       </div>
-      <details className="mb-1">
-        <summary className="cursor-default text-muted">Custom site</summary>
+      <details className="group/c">
+        <summary className="flex cursor-default list-none items-center gap-1.5 py-1 text-muted hover:text-fg [&::-webkit-details-marker]:hidden">
+          <span aria-hidden="true" className="inline-block transition-transform group-open/c:rotate-90 motion-reduce:transition-none">
+            ›
+          </span>
+          Custom site
+        </summary>
         <form onSubmit={onCustom}>
           <Field label="Name" name="name" required />
           <Field label="URL" name="url" type="url" pattern="https?://.+" placeholder="https://…" required />
@@ -73,9 +78,9 @@ export function ConnectDialog() {
           </Button>
         </form>
       </details>
-      <Button className="mt-3.5" onClick={() => setConnectOpen(false)}>
-        Cancel
-      </Button>
+      <div className="mt-4 flex justify-end">
+        <Button onClick={() => setConnectOpen(false)}>Cancel</Button>
+      </div>
     </dialog>
   )
 }

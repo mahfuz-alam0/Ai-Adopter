@@ -23,31 +23,32 @@ const BY_STATE: Partial<Record<State, string>> = {
 
 interface Props {
   stage: RefObject<HTMLElement | null>
-  form: RefObject<HTMLElement | null>
+  hub: RefObject<HTMLElement | null>
   cards: RefObject<HTMLElement | null>
   nodes: { id: string; color: string; state: State; phase: Phase }[]
 }
 
-// Connectors from the console (the hub) to every element in `cards` that carries data-wire.
-export function Wires({ stage, form, cards, nodes }: Props) {
+// Connectors from the top of the hub (the prompt box) up to the bottom of every element in `cards` that carries data-wire.
+// Paths start at the hub, so dashes moving along them travel hub to AI.
+export function Wires({ stage, hub, cards, nodes }: Props) {
   const [paths, setPaths] = useState<Record<string, string>>({})
 
   const draw = useCallback(() => {
-    if (!stage.current || !form.current || !cards.current) return
+    if (!stage.current || !hub.current || !cards.current) return
     const s = stage.current.getBoundingClientRect()
-    const f = form.current.getBoundingClientRect()
+    const f = hub.current.getBoundingClientRect()
     const x1 = f.left + f.width / 2 - s.left
-    const y1 = f.bottom - s.top
+    const y1 = f.top - s.top
     const next: Record<string, string> = {}
     for (const el of cards.current.querySelectorAll<HTMLElement>('[data-wire]')) {
       const c = el.getBoundingClientRect()
       const x2 = c.left + c.width / 2 - s.left
-      const y2 = c.top - s.top
+      const y2 = c.bottom - s.top
       const ym = (y1 + y2) / 2
       next[el.dataset.wire!] = `M${x1} ${y1}C${x1} ${ym} ${x2} ${ym} ${x2} ${y2}`
     }
     setPaths((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
-  }, [stage, form, cards])
+  }, [stage, hub, cards])
 
   // Layout can shift on any render (answers grow, banner appears), so measure after each one; the equality check stops loops.
   useLayoutEffect(draw)

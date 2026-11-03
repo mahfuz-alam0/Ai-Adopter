@@ -36,6 +36,10 @@ export function useConnections(setStatus: (t: string) => void) {
       sync()
     }
   }, [setStatus, sync])
+  // Load the logged-in AIs' pages now, so the first prompt does not wait for them.
+  useEffect(() => {
+    lanes.warm(providers.map((p) => p.id))
+  }, []) // once, at startup
   useEffect(() => {
     sync()
     const t = setInterval(sync, 500)
