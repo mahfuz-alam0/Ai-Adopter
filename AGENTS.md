@@ -16,7 +16,7 @@ npm workspaces + Turborepo. Node 24 (runs `.ts` natively, no build step for test
   - `src-tauri/src/lib.rs` — Rust commands: `lane_open` (takes the selector JSON), `lane_eval`, `lane_show`, `lane_close`, `open_url`, `auth_listen`.
   - `src-tauri/lanes/base.js` — shared driver (`window.__lane.ready/send/read`) with auto-detect default selectors. Per-provider selectors arrive as `window.__SEL`, injected by Rust.
 - `apps/server` — bare `node:http` server (port 4000), no dependencies. `src/index.ts` routes, `src/auth.ts` holds Google sign-in, PKCE code exchange, signed sessions, `src/remote.ts` the remote relay. No pages: apps/web is its face.
-- `apps/web` — Next.js (App Router, port 3000). The public origin for sign-in: `app/page.tsx` is the sign-in page, `next.config.ts` proxies `/auth/*`, `/logout` and `/me` to the server. Only login so far.
+- `apps/web` — Next.js (App Router, port 3000). Standard `src/` layout: routes in `src/app/`, static files in `public/`, `@/*` aliases `src/*`. The public origin for sign-in: `src/app/page.tsx` is the sign-in page, `next.config.ts` proxies `/auth/*`, `/logout` and `/me` to the server. Only login so far.
 
 ## Google sign-in (AI Hub account)
 

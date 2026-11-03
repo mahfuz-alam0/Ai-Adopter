@@ -10,6 +10,17 @@ export const STATE_LABEL: Record<State, string> = {
   checking: 'Checking…',
 }
 
+// Status dot on a logo; busy beats in the provider color (--c from tint()).
+export const STATE_DOT: Record<State, string> = {
+  unknown: 'bg-dim',
+  'logged-out': 'bg-bad',
+  cold: 'bg-good',
+  ready: 'bg-good',
+  busy: 'animate-beat bg-(--c)',
+  'needs-user': 'bg-warn',
+  checking: 'animate-beat bg-dim',
+}
+
 // The dot color follows data-state on the nearest `group` ancestor (row, card or tile).
 export const StateLabel = ({ state, className = '' }: { state: State; className?: string }) => (
   <span className={`whitespace-nowrap text-[11.5px] text-muted ${className}`}>

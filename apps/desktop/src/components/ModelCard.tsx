@@ -3,20 +3,11 @@ import type { State } from '../lib/lanes.ts'
 import type { Provider } from '../lib/providers.ts'
 import type { Track } from '../state/useThread.ts'
 import { Mark, tint } from './Mark.tsx'
-import { STATE_LABEL } from './StateLabel.tsx'
+import { STATE_DOT, STATE_LABEL } from './StateLabel.tsx'
 
 interface Props { p: Provider; state: State; track?: Track; reviewing: boolean }
 
 const FACE = { active: 'border-transparent', done: 'border-good/40', error: 'border-bad/60', idle: 'border-line' }
-const STATE_DOT: Record<State, string> = {
-  unknown: 'bg-dim',
-  'logged-out': 'bg-bad',
-  cold: 'bg-good',
-  ready: 'bg-good',
-  busy: 'animate-beat bg-(--c)',
-  'needs-user': 'bg-warn',
-  checking: 'animate-beat bg-dim',
-}
 
 // One AI as a tiny workflow node: its logo and a status dot. While it works a ring spins around the logo and the dot
 // beats; the name and phase are in the tooltip, and the text it writes lives in <Chat>.
