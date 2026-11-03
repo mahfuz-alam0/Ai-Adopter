@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Hub</title>
+    <style>
+      :root { color-scheme: light dark; font: 14px system-ui, sans-serif }
+      body { margin: 0; height: 100vh; display: flex; flex-direction: column }
+      #chip { padding: 6px 12px; min-height: 28px; display: flex; gap: 6px; align-items: center; border-bottom: 1px solid #8884 }
+      #panes { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); min-height: 0 }
+      section { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #8884 }
+      h2 { margin: 0; padding: 8px 12px; font-size: 13px; display: flex; justify-content: space-between }
+      .badge { font-weight: normal; opacity: .7; cursor: default }
+      .badge.needs-user { color: #d33; opacity: 1; cursor: pointer }
+      pre { flex: 1; margin: 0; padding: 0 12px 12px; overflow: auto; white-space: pre-wrap; font: inherit }
+      form { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid #8884 }
+      textarea { flex: 1; resize: none; font: inherit; padding: 6px }
+    </style>
+  </head>
+  <body>
+    <div id="chip"></div>
+    <main id="panes"></main>
+    <form id="form">
+      <textarea id="prompt" rows="3" placeholder="Ask anything. Prefix @claude, @chatgpt or @gemini to force a provider. Enter sends."></textarea>
+      <button type="submit">Send</button>
+      <button type="button" id="compare">Compare all</button>
+      <button type="button" id="new">New thread</button>
+    </form>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
