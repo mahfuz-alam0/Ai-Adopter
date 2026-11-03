@@ -1,8 +1,13 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import type { Selectors } from './providers.ts'
 
-export type State = 'cold' | 'ready' | 'busy' | 'needs-user'
+// cold = lane closed, last check found the prompt box. unknown = never checked. logged-out = last check found none.
+export type State = 'unknown' | 'logged-out' | 'cold' | 'ready' | 'busy' | 'needs-user' | 'checking'
 interface Lane { state: State; lastUsed: number }
+
+// A lane that has no window open, or whose window is waiting on the user, cannot take a prompt.
+export const canSend = (s: State) => s !== 'needs-user' && s !== 'logged-out' && s !== 'checking'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -35,6 +40,10 @@ export class LaneManager {
   sels: Record<string, Selectors | undefined> = {}
   // Display names for the login window title.
   names: Record<string, string | undefined> = {}
+  // Whether the prompt box was found the last time the lane was looked at. The caller persists it.
+  ok: Record<string, boolean | undefined> = {}
+  // Called when the user finishes with a login window and the page has been checked.
+  onDone?: (id: string, ok: boolean) => void
 
   // urls is mutable on purpose: callers store the conversation URL after a reply so a cold lane resumes the thread.
   constructor(
@@ -43,6 +52,8 @@ export class LaneManager {
     private idleMs = 180_000,
   ) {
     setInterval(() => void this.sweep(), 15_000)
+    // The window's close button only hides it (Rust), which is the same as clicking Done.
+    void listen<string>('lane-hidden', (e) => void this.finish(e.payload)).catch(() => undefined) // no Tauri in plain-browser dev
   }
 
   run<T>(id: string, fn: () => Promise<T>): Promise<T> {
@@ -62,7 +73,9 @@ export class LaneManager {
   }
 
   state(id: string): State {
-    return this.lanes.get(id)?.state ?? 'cold'
+    const s = this.lanes.get(id)?.state
+    if (s && s !== 'cold') return s
+    return this.ok[id] === undefined ? 'unknown' : this.ok[id] ? 'cold' : 'logged-out'
   }
 
   isWarm(id: string) {
@@ -77,6 +90,16 @@ export class LaneManager {
     await this.loaded(id)
     await invoke('lane_show', { id, title: `Log in to ${this.names[id] ?? id}` })
     this.lanes.set(id, { state: 'needs-user', lastUsed: Date.now() })
+  }
+
+  // The user is done with the login window. Whether it worked is only visible in the page, so look before closing.
+  async finish(id: string) {
+    if (this.state(id) !== 'needs-user') return // already handled (Done button, then the hide event)
+    this.lanes.set(id, { state: 'checking', lastUsed: Date.now() })
+    const ok = await this.probe(id, 5_000)
+    this.ok[id] = ok
+    await this.close(id).catch(() => undefined)
+    this.onDone?.(id, ok)
   }
 
   async closeAll() {
@@ -109,13 +132,19 @@ export class LaneManager {
     await this.evict(id)
   }
 
-  private async waitReady(id: string, timeoutMs = 20_000) {
+  private async probe(id: string, timeoutMs: number) {
     const end = Date.now() + timeoutMs
     while (Date.now() < end) {
       const ok = await evalJs<boolean>(id, 'window.__lane ? window.__lane.ready() : "false"').catch(() => false)
-      if (ok === true) return
+      if (ok === true) return true
       await sleep(500)
     }
+    return false
+  }
+
+  private async waitReady(id: string, timeoutMs = 20_000) {
+    const ok = (this.ok[id] = await this.probe(id, timeoutMs))
+    if (ok) return
     await this.login(id)
     throw new NeedsUser(id)
   }

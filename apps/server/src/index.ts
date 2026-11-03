@@ -1,5 +1,6 @@
 import { createServer } from 'node:http'
 import { callback, exchange, logout, me, start } from './auth.ts'
+import { ask, mintKey, models, poll, result } from './remote.ts'
 
 // The desktop webview calls /auth/exchange and /me cross-origin: tauri://localhost (macOS, Linux),
 // http://tauri.localhost (Windows), http://localhost:1420 (tauri dev). Those calls arrive through apps/web's
@@ -31,6 +32,16 @@ export const server = createServer(async (req, res) => {
         return await exchange(req, res)
       case 'GET /me':
         return me(req, res)
+      case 'POST /remote/key':
+        return mintKey(req, res)
+      case 'POST /remote/poll':
+        return await poll(req, res)
+      case 'POST /remote/result':
+        return await result(req, res)
+      case 'GET /v1/models':
+        return models(req, res)
+      case 'POST /v1/ask':
+        return await ask(req, res)
     }
     res.writeHead(404).end()
   } catch (e) {

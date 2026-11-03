@@ -81,6 +81,45 @@ const pre = (origin: string) => fetch(`${base}/me`, { method: 'OPTIONS', headers
 assert.equal((await pre('tauri://localhost')).headers.get('access-control-allow-origin'), 'tauri://localhost')
 assert.equal((await pre('https://evil.example')).headers.get('access-control-allow-origin'), null)
 
+// Remote relay: API client -> server -> desktop host (long-poll) -> back.
+const post = (path: string, tok: string | undefined, body: object) =>
+  fetch(base + path, { method: 'POST', headers: tok ? { authorization: `Bearer ${tok}` } : {}, body: JSON.stringify(body) })
+const getAs = (path: string, tok: string) => fetch(base + path, { headers: { authorization: `Bearer ${tok}` } })
+
+assert.equal((await post('/remote/key', undefined, {})).status, 401)
+const { key } = (await (await post('/remote/key', token, {})).json()) as { key: string }
+assert.equal((await getAs('/v1/models', key)).status, 503) // no host yet
+assert.equal((await getAs('/v1/models', token)).status, 401) // session token is not an API key
+assert.equal((await post('/remote/poll', key, {})).status, 401) // API key cannot act as the host
+
+const hosted = post('/remote/poll', token, { models: [{ id: 'claude', name: 'Claude' }, { bad: 1 }] })
+for (let i = 0; i < 40 && (await getAs('/v1/models', key)).status !== 200; i++) await new Promise((r) => setTimeout(r, 25))
+assert.deepEqual(await (await getAs('/v1/models', key)).json(), { models: [{ id: 'claude', name: 'Claude' }] })
+assert.equal((await post('/v1/ask', key, { prompt: '  ' })).status, 400)
+assert.equal((await post('/v1/ask', key, { prompt: 'x', mode: 'auto' })).status, 400)
+
+const asked = post('/v1/ask', key, { prompt: 'héllo', models: ['claude'] })
+const { job } = (await (await hosted).json()) as { job: { id: string; prompt: string; mode: string; models: string[] } }
+assert.deepEqual([job.prompt, job.mode, job.models], ['héllo', 'parallel', ['claude']])
+assert.equal((await post('/remote/result', key, { id: job.id })).status, 401)
+assert.equal((await post('/remote/result', token, { id: 'nope' })).status, 404)
+assert.equal((await post('/remote/result', token, { id: job.id, answers: { claude: 'hi' } })).status, 200)
+const reply = await asked
+assert.equal(reply.status, 200)
+assert.deepEqual(await reply.json(), { answers: { claude: 'hi' }, errors: {}, matrix: null })
+assert.equal((await post('/remote/result', token, { id: job.id, answers: {} })).status, 404) // single use
+
+// A host error surfaces as 502; a new key revokes the old one.
+const hosted2 = post('/remote/poll', token, { models: [] })
+await new Promise((r) => setTimeout(r, 50))
+const asked2 = post('/v1/ask', key, { prompt: 'x', mode: 'cross' })
+const j2 = ((await (await hosted2).json()) as { job: { id: string } }).job
+await post('/remote/result', token, { id: j2.id, error: 'boom' })
+assert.deepEqual([(await asked2).status, await (await asked2).json()], [502, { error: 'boom' }])
+const { key: key2 } = (await (await post('/remote/key', token, {})).json()) as { key: string }
+assert.equal((await getAs('/v1/models', key)).status, 401)
+assert.notEqual((await getAs('/v1/models', key2)).status, 401)
+
 server.close()
 google.close()
 console.log('server ok')

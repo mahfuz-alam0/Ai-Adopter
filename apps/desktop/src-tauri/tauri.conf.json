@@ -15,8 +15,10 @@
       {
         "label": "main",
         "title": "AI Hub",
-        "width": 1100,
-        "height": 760
+        "width": 1200,
+        "height": 780,
+        "minWidth": 900,
+        "minHeight": 600
       }
     ],
     "security": {

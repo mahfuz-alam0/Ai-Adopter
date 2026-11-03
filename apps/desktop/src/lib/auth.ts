@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
 // Public origin of apps/web; it proxies the sign-in and token calls to apps/server.
-const AUTH_URL: string = import.meta.env.VITE_AUTH_URL ?? 'http://localhost:3000'
+export const AUTH_URL: string = import.meta.env.VITE_AUTH_URL ?? 'http://localhost:3000'
 const KEY = 'session'
 
 export interface User { sub: string; email: string; name: string }
@@ -10,6 +10,7 @@ export interface User { sub: string; email: string; name: string }
 // ponytail: token sits in localStorage and its expiry is not checked here. Move it to the OS keychain
 // (a Rust command) and call /me on startup if the token starts guarding anything sensitive.
 export const currentUser = (): User | null => JSON.parse(localStorage.getItem(KEY) ?? 'null')?.user ?? null
+export const token = (): string | undefined => JSON.parse(localStorage.getItem(KEY) ?? 'null')?.token
 export const signOut = () => localStorage.removeItem(KEY)
 
 const b64url = (b: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')

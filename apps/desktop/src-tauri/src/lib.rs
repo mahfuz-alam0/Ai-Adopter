@@ -42,7 +42,18 @@ async fn lane_open(app: AppHandle, id: String, url: String, sel: String) -> Resu
         ident[..n].copy_from_slice(&id.as_bytes()[..n]);
         b.data_store_identifier(ident)
     };
-    b.build().map_err(|e| e.to_string())?;
+    let win = b.build().map_err(|e| e.to_string())?;
+    // The close button hides the window instead of destroying it, so the frontend can still look at the page
+    // to learn whether the login worked, then close the lane itself.
+    let (app, label) = (app.clone(), id.clone());
+    let w = win.clone();
+    win.on_window_event(move |e| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = e {
+            api.prevent_close();
+            let _ = w.hide();
+            let _ = app.emit_to("main", "lane-hidden", &label);
+        }
+    });
     Ok(())
 }
 

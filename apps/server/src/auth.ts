@@ -144,14 +144,15 @@ export async function callback(req: IncomingMessage, res: ServerResponse, q: URL
   redirect(res, '/')
 }
 
-const json = (res: ServerResponse, status: number, body: object) =>
+export const json = (res: ServerResponse, status: number, body: object) =>
   void res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
 
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+export async function readJson(req: IncomingMessage, max = 4096): Promise<Record<string, unknown>> {
+  req.setEncoding('utf8') // else a multi-byte character split across chunks turns into garbage
   let s = ''
   for await (const chunk of req) {
     s += chunk
-    if (s.length > 4096) throw new Error('body too large')
+    if (s.length > max) throw new Error('body too large')
   }
   return JSON.parse(s)
 }
@@ -172,9 +173,12 @@ export async function exchange(req: IncomingMessage, res: ServerResponse) {
   json(res, 200, { token: sign(e.user, 30 * 86_400_000), user: e.user })
 }
 
+// Header only (no cookie), so a page in the user's browser cannot drive these calls cross-site.
+export const bearer = (req: IncomingMessage) => req.headers.authorization?.replace(/^Bearer /, '')
+
 // Bearer token for the desktop app, session cookie for apps/web (which forwards it from the browser).
 export function me(req: IncomingMessage, res: ServerResponse) {
-  const u = verify<User>(req.headers.authorization?.replace(/^Bearer /, '') ?? cookie(req, 'session'))
+  const u = verify<User>(bearer(req) ?? cookie(req, 'session'))
   if (!u) return json(res, 401, { error: 'unauthorized' })
   json(res, 200, { user: { sub: u.sub, email: u.email, name: u.name } })
 }
