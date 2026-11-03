@@ -15,7 +15,7 @@ fn init_script(sel: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn lane_open(app: AppHandle, id: String, url: String, show: bool, sel: String) -> Result<(), String> {
+async fn lane_open(app: AppHandle, id: String, url: String, sel: String) -> Result<(), String> {
     // The id is a window label, a data-dir name, and the macOS store identifier (16 bytes), so keep it short and plain.
     if id.is_empty() || id.len() > 16 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
         return Err("bad lane id".into());
@@ -30,7 +30,7 @@ async fn lane_open(app: AppHandle, id: String, url: String, show: bool, sel: Str
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join(&id);
     let b = WebviewWindowBuilder::new(&app, &id, WebviewUrl::External(url))
         .title(&id)
-        .visible(show)
+        .visible(false) // lane_show reveals it once the page has loaded
         .data_directory(data_dir)
         .background_throttling(BackgroundThrottlingPolicy::Disabled)
         .initialization_script(init_script(&sel)?);
@@ -61,8 +61,9 @@ async fn lane_eval(app: AppHandle, id: String, js: String) -> Result<String, Str
 }
 
 #[tauri::command]
-async fn lane_show(app: AppHandle, id: String) -> Result<(), String> {
+async fn lane_show(app: AppHandle, id: String, title: String) -> Result<(), String> {
     let win = app.get_webview_window(&id).ok_or("lane not open")?;
+    win.set_title(&title).map_err(|e| e.to_string())?;
     win.show().map_err(|e| e.to_string())?;
     win.set_focus().map_err(|e| e.to_string())
 }

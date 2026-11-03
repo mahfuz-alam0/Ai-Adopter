@@ -33,6 +33,8 @@ export class LaneManager {
 
   // Per-lane selector overrides, injected into the page on open. No entry = base.js auto-detect.
   sels: Record<string, Selectors | undefined> = {}
+  // Display names for the login window title.
+  names: Record<string, string | undefined> = {}
 
   // urls is mutable on purpose: callers store the conversation URL after a reply so a cold lane resumes the thread.
   constructor(
@@ -70,8 +72,10 @@ export class LaneManager {
 
   // Show the provider window so the user can sign in. Cookies persist in its own store; close() hides it again.
   async login(id: string) {
-    await this.open(id, true)
-    await invoke('lane_show', { id })
+    await this.open(id)
+    // Reveal only once the page has rendered; a window that opens blank or half-drawn looks broken.
+    await this.loaded(id)
+    await invoke('lane_show', { id, title: `Log in to ${this.names[id] ?? id}` })
     this.lanes.set(id, { state: 'needs-user', lastUsed: Date.now() })
   }
 
@@ -84,13 +88,22 @@ export class LaneManager {
     this.lanes.set(id, { state: 'cold', lastUsed: 0 })
   }
 
-  private open(id: string, show: boolean) {
-    return invoke('lane_open', { id, url: this.urls[id], show, sel: JSON.stringify(this.sels[id] ?? {}) })
+  private open(id: string) {
+    return invoke('lane_open', { id, url: this.urls[id], sel: JSON.stringify(this.sels[id] ?? {}) })
+  }
+
+  // Best effort: a slow or navigating page must not keep the login window from showing.
+  private async loaded(id: string, timeoutMs = 8_000) {
+    const end = Date.now() + timeoutMs
+    while (Date.now() < end) {
+      if ((await evalJs<string>(id, 'document.readyState', 2_000).catch(() => '')) === 'complete') return
+      await sleep(200)
+    }
   }
 
   private async acquire(id: string) {
     const lane = this.lanes.get(id)
-    await this.open(id, false)
+    await this.open(id)
     if (!lane || lane.state !== 'ready') await this.waitReady(id)
     this.lanes.set(id, { state: 'busy', lastUsed: Date.now() })
     await this.evict(id)

@@ -11,6 +11,7 @@ const lanes = new LaneManager({})
 for (const p of providers) {
   lanes.urls[p.id] = p.url
   lanes.sels[p.id] = p.sel
+  lanes.names[p.id] = p.name
 }
 const prov = (id: string) => providers.find((p) => p.id === id)!
 
@@ -28,6 +29,8 @@ const cardsEl = $('cards')
 const addEl = $('addbtn')
 const dlg = $<HTMLDialogElement>('add')
 const setStatus = (t: string) => ($('status').textContent = t)
+// Google refuses its sign-in inside embedded webviews, so provider logins must use email or code.
+const LOGIN_HINT = 'Use email or a code: Google sign-in does not work inside app windows.'
 
 // A card is a node on the hub: a wire runs from the prompt box to it.
 interface Card {
@@ -123,8 +126,9 @@ async function connect(p: Provider) {
   saveProviders(providers)
   lanes.urls[p.id] = p.url
   lanes.sels[p.id] = p.sel
+  lanes.names[p.id] = p.name
   addCard(p)
-  setStatus(`Log in to ${p.name} in the window that opened, then click Done on its tile.`)
+  setStatus(`Log in to ${p.name} in the window that opens, then click Done on its tile. ${LOGIN_HINT}`)
   await lanes.login(p.id).catch((e) => setStatus(String(e)))
   refresh()
 }
@@ -176,7 +180,7 @@ async function exec(id: string, text: string, el: HTMLElement) {
     return r.text
   } catch (e) {
     el.textContent =
-      e instanceof NeedsUser ? 'Log in in the window that just opened, then click Done on this card.' : `Error: ${(e as Error).message}`
+      e instanceof NeedsUser ? `Log in in the window that just opened, then click Done on this card. ${LOGIN_HINT}` : `Error: ${(e as Error).message}`
   }
 }
 
