@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::time::{Duration, Instant};
-use tauri::{utils::config::BackgroundThrottlingPolicy, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{utils::config::BackgroundThrottlingPolicy, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, Webview, WebviewUrl, WebviewWindowBuilder};
 
 // Lane script = provider selectors (JSON from the frontend) + shared driver. Provider windows get no
 // capability, so these scripts cannot reach Rust; Rust only reaches them through eval.
@@ -26,7 +26,7 @@ fn build_lane(app: &AppHandle, id: &str, url: &str, sel: &str) -> Result<tauri::
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join(id);
     let b = WebviewWindowBuilder::new(app, id, WebviewUrl::External(url))
         .title(id)
-        .visible(false) // lane_show reveals it once the page has loaded
+        .visible(false) // never shown as a window: lane_embed moves the page into the main window
         // Tauri's default 800x600 sits on chat sites' mobile/desktop breakpoint: ChatGPT's sidebar flickers open and
         // shut there. Desktop size keeps every site (and its selectors) on the desktop layout.
         .inner_size(1100.0, 720.0)
@@ -47,19 +47,7 @@ fn build_lane(app: &AppHandle, id: &str, url: &str, sel: &str) -> Result<tauri::
         ident[..n].copy_from_slice(&id.as_bytes()[..n]);
         b.data_store_identifier(ident)
     };
-    let win = b.build().map_err(|e| e.to_string())?;
-    // The close button hides the window instead of destroying it, so the frontend can still look at the page
-    // to learn whether the login worked, then close the lane itself.
-    let (app, label) = (app.clone(), id.to_string());
-    let w = win.clone();
-    win.on_window_event(move |e| {
-        if let tauri::WindowEvent::CloseRequested { api, .. } = e {
-            api.prevent_close();
-            let _ = w.hide();
-            let _ = app.emit_to("main", "lane-hidden", &label);
-        }
-    });
-    Ok(win)
+    b.build().map_err(|e| e.to_string())
 }
 
 // Shared Google session: the "google" lane holds the one real Google sign-in. Its google.com cookies are copied
@@ -69,20 +57,20 @@ const GOOGLE: &str = "google";
 static GOOGLE_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
 
 // Hidden unless the frontend shows it. Locked so lanes opening together do not both build the window.
-async fn google_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
+async fn google_window(app: &AppHandle) -> Result<Webview, String> {
     let _guard = GOOGLE_LOCK.get_or_init(Default::default).lock().await;
-    match app.get_webview_window(GOOGLE) {
+    match app.get_webview(GOOGLE) {
         Some(w) => Ok(w),
-        None => build_lane(app, GOOGLE, "https://accounts.google.com/", "{}"),
+        None => build_lane(app, GOOGLE, "https://accounts.google.com/", "{}").map(|w| w.as_ref().clone()),
     }
 }
 
-fn google_cookies(w: &tauri::WebviewWindow) -> Result<Vec<tauri::webview::Cookie<'static>>, String> {
+fn google_cookies(w: &Webview) -> Result<Vec<tauri::webview::Cookie<'static>>, String> {
     let all = w.cookies().map_err(|e| e.to_string())?;
     Ok(all.into_iter().filter(|c| c.domain().is_some_and(|d| d.trim_start_matches('.').ends_with("google.com"))).collect())
 }
 
-async fn copy_google(app: &AppHandle, to: &tauri::WebviewWindow) -> Result<(), String> {
+async fn copy_google(app: &AppHandle, to: &Webview) -> Result<(), String> {
     for c in google_cookies(&google_window(app).await?)? {
         let _ = to.set_cookie(c);
     }
@@ -91,13 +79,13 @@ async fn copy_google(app: &AppHandle, to: &tauri::WebviewWindow) -> Result<(), S
 
 #[tauri::command]
 async fn lane_open(app: AppHandle, id: String, url: String, sel: String, google: Option<bool>) -> Result<(), String> {
-    if app.get_webview_window(&id).is_some() {
+    if app.get_webview(&id).is_some() {
         return Ok(());
     }
     let win = build_lane(&app, &id, &url, &sel)?;
     if google == Some(true) && id != GOOGLE {
         // Best effort: a lane that misses the copy still opens, the user then signs in to Google on the site.
-        let _ = copy_google(&app, &win).await;
+        let _ = copy_google(&app, win.as_ref()).await;
     }
     Ok(())
 }
@@ -105,14 +93,14 @@ async fn lane_open(app: AppHandle, id: String, url: String, sel: String, google:
 // Whether the google lane holds a Google login. SID is Google's session cookie; it only exists after sign-in.
 #[tauri::command]
 async fn google_signed_in(app: AppHandle) -> Result<bool, String> {
-    let Some(w) = app.get_webview_window(GOOGLE) else { return Ok(false) };
+    let Some(w) = app.get_webview(GOOGLE) else { return Ok(false) };
     Ok(google_cookies(&w)?.iter().any(|c| c.name() == "SID"))
 }
 
 // Push the Google cookies into a lane that is already open (it was opened before the sign-in).
 #[tauri::command]
 async fn google_sync(app: AppHandle, id: String) -> Result<(), String> {
-    let to = app.get_webview_window(&id).ok_or("lane not open")?;
+    let to = app.get_webview(&id).ok_or("lane not open")?;
     copy_google(&app, &to).await
 }
 
@@ -128,7 +116,7 @@ async fn google_signout(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn lane_eval(app: AppHandle, id: String, js: String) -> Result<String, String> {
-    let win = app.get_webview_window(&id).ok_or("lane not open")?;
+    let win = app.get_webview(&id).ok_or("lane not open")?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     let tx = std::sync::Mutex::new(Some(tx));
     win.eval_with_callback(js, move |out| {
@@ -140,17 +128,34 @@ async fn lane_eval(app: AppHandle, id: String, js: String) -> Result<String, Str
     rx.await.map_err(|e| e.to_string())
 }
 
+// Show a lane's page inside the main window, at a rect in CSS px (the frame the UI draws for it). The page keeps
+// its session and scripts; only its parent changes. Called again whenever the frame moves or resizes.
 #[tauri::command]
-async fn lane_show(app: AppHandle, id: String, title: String) -> Result<(), String> {
-    let win = app.get_webview_window(&id).ok_or("lane not open")?;
-    win.set_title(&title).map_err(|e| e.to_string())?;
-    win.show().map_err(|e| e.to_string())?;
-    win.set_focus().map_err(|e| e.to_string())
+async fn lane_embed(app: AppHandle, id: String, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+    let wv = app.get_webview(&id).ok_or("lane not open")?;
+    if wv.window().label() != "main" {
+        let main = app.get_window("main").ok_or("no main window")?;
+        wv.reparent(&main).map_err(|e| e.to_string())?;
+    }
+    wv.set_bounds(Rect { position: LogicalPosition::new(x, y).into(), size: LogicalSize::new(w, h).into() }).map_err(|e| e.to_string())?;
+    wv.show().map_err(|e| e.to_string())
+}
+
+// The frame went away but the lane lives on (login check in flight): hide the page, keep it loaded.
+#[tauri::command]
+async fn lane_hide(app: AppHandle, id: String) -> Result<(), String> {
+    app.get_webview(&id).ok_or("lane not open")?.hide().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn lane_close(app: AppHandle, id: String) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window(&id) {
+    // An embedded page lives in the main window and left an empty hidden window behind; drop both.
+    if let Some(wv) = app.get_webview(&id) {
+        if wv.window().label() != id {
+            wv.close().map_err(|e| e.to_string())?;
+        }
+    }
+    if let Some(win) = app.get_window(&id) {
         win.destroy().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -162,23 +167,6 @@ fn dev_log(line: String) {
     if cfg!(debug_assertions) {
         eprintln!("{line}");
     }
-}
-
-// Open a sign-in page in the user's default browser. Google refuses sign-in inside embedded webviews.
-#[tauri::command]
-fn open_url(url: String) -> Result<(), String> {
-    let url: tauri::Url = url.parse().map_err(|e| format!("{e}"))?;
-    if !matches!(url.scheme(), "http" | "https") {
-        return Err("url must be http(s)".into());
-    }
-    let opener = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(target_os = "windows") {
-        "explorer"
-    } else {
-        "xdg-open"
-    };
-    std::process::Command::new(opener).arg(url.as_str()).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 // One-shot loopback listener for the sign-in redirect. Returns the port; emits "auth-code" with the
@@ -228,7 +216,7 @@ fn auth_listen(app: AppHandle) -> Result<u16, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![lane_open, google_signed_in, google_sync, google_signout, lane_eval, lane_show, lane_close, open_url, auth_listen, dev_log])
+        .invoke_handler(tauri::generate_handler![lane_open, google_signed_in, google_sync, google_signout, lane_eval, lane_embed, lane_hide, lane_close, auth_listen, dev_log])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

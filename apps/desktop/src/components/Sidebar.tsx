@@ -8,7 +8,7 @@ import { Button, buttonClass, focusRing } from './Button.tsx'
 import { Mark, tint } from './Mark.tsx'
 import { STATE_DOT, STATE_LABEL } from './StateLabel.tsx'
 
-// What toggle() does for a lane in this state: check an open login window, or open one.
+// What toggle() does for a lane in this state: check an open login page, or open one.
 const action = (s: State) => (s === 'needs-user' ? 'Done' : s === 'logged-out' || s === 'unknown' ? 'Log in' : 'Reconnect')
 
 const PANEL = 'M3 5h18v14H3zM9 5v14'
@@ -102,7 +102,7 @@ export function Sidebar() {
             {p.path === '/connections' && waiting > 0 && (
               <span
                 className={`min-w-4.5 rounded-full bg-warn px-1.5 text-center text-[11px]/[18px] font-normal text-on ${slim ? 'absolute -top-1 -right-1' : ''}`}
-                title="A window is waiting for you"
+                title="A login is waiting for you"
               >
                 {waiting}
               </span>

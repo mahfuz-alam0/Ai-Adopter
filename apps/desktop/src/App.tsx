@@ -1,5 +1,6 @@
 import { HashRouter, Navigate, Outlet, Route, Routes } from 'react-router'
 import { ConnectDialog } from './components/ConnectDialog.tsx'
+import { EmbedPane } from './components/EmbedPane.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
 import { PAGES } from './pages/index.ts'
 import { WelcomePage } from './pages/WelcomePage.tsx'
@@ -12,7 +13,10 @@ function Shell() {
       <Sidebar />
       <main className="flex min-h-0 min-w-0 flex-col">
         <div className="border-b border-accent/30 bg-accent/12 px-7 py-2 text-[12.5px] empty:hidden" role="status">{status}</div>
-        <Outlet />
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <Outlet />
+          <EmbedPane />
+        </div>
       </main>
       <ConnectDialog />
     </div>

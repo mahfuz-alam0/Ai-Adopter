@@ -1,5 +1,4 @@
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
 import { formatTrace } from './devlog.ts'
 import type { Marks, Polls, Req } from './devlog.ts'
 import type { Selectors } from './providers.ts'
@@ -44,6 +43,9 @@ export async function evalJs<T>(id: string, js: string, timeoutMs = 10_000): Pro
   }
 }
 
+// The lane page shown inside the main window: the UI draws a frame with a Done button and reports its rect to place().
+export interface Shown { id: string; title: string; done: () => void }
+
 export class NeedsUser extends Error {
   constructor(public lane: string) {
     super(`${lane} needs login`)
@@ -60,8 +62,10 @@ export class LaneManager {
   names: Record<string, string | undefined> = {}
   // Whether the prompt box was found the last time the lane was looked at. The caller persists it.
   ok: Record<string, boolean | undefined> = {}
-  // Called when the user finishes with a login window and the page has been checked.
+  // Called when the user finishes with a login page and the page has been checked.
   onDone?: (id: string, ok: boolean) => void
+  // The one lane page on screen (login). Not reactive: the UI reads it on a timer, like state().
+  shown: Shown | null = null
 
   // urls is mutable on purpose: callers store the conversation URL after a reply so a cold lane resumes the thread.
   constructor(
@@ -70,29 +74,27 @@ export class LaneManager {
     private idleMs = 1_800_000, // a closed lane costs a full page load on the next prompt, so keep it long
   ) {
     setInterval(() => void this.sweep(), 15_000)
-    // The window's close button only hides it (Rust), which is the same as clicking Done.
-    void listen<string>('lane-hidden', (e) => (e.payload === GOOGLE ? (this.googleHidden = true) : void this.finish(e.payload))).catch(() => undefined) // no Tauri in plain-browser dev
   }
 
   // Shared Google session (see lib.rs): while on, every lane window opens with a copy of the google.com cookies.
   // The caller persists it, like ok.
   google = false
-  private googleHidden = false
+  private googleDone = false
 
-  // Sign in to Google once in its own window. True once the session cookie exists; false if the window was closed first.
+  // Sign in to Google once, in the frame inside the app. True once the session cookie exists; false if Done came first.
   async googleLogin() {
-    this.googleHidden = false
+    this.googleDone = false
     await invoke('lane_open', { id: GOOGLE, url: 'https://accounts.google.com/', sel: '{}' })
     await this.loaded(GOOGLE)
-    await invoke('lane_show', { id: GOOGLE, title: 'Sign in to Google' })
+    this.shown = { id: GOOGLE, title: 'Sign in to Google', done: () => (this.googleDone = true) }
     const signedIn = () => invoke<boolean>('google_signed_in').catch(() => false)
-    while (!this.googleHidden && !(await signedIn())) await sleep(1_000)
-    const ok = await signedIn() // closing the window right after signing in lands here with the flag set
+    while (!this.googleDone && !(await signedIn())) await sleep(1_000)
+    const ok = await signedIn() // Done right after signing in lands here with the flag set
     if (ok) {
       // Lanes opened before the sign-in have no copy yet.
       for (const [id, l] of this.lanes) if (l.state !== 'cold') await invoke('google_sync', { id }).catch(() => undefined)
     }
-    await invoke('lane_close', { id: GOOGLE })
+    await this.close(GOOGLE)
     this.google = ok
     return ok
   }
@@ -139,19 +141,19 @@ export class LaneManager {
     return s === 'ready' || s === 'busy'
   }
 
-  // Show the provider window so the user can sign in. Cookies persist in its own store; close() hides it again.
+  // Show the provider page in the app so the user can sign in. Cookies persist in its own store; close() drops it again.
   async login(id: string) {
     await this.open(id)
-    // Reveal only once the page has rendered; a window that opens blank or half-drawn looks broken.
+    // Reveal only once the page has rendered; a page that shows blank or half-drawn looks broken.
     await this.loaded(id)
-    await invoke('lane_show', { id, title: `Log in to ${this.names[id] ?? id}` })
+    this.shown = { id, title: `Log in to ${this.names[id] ?? id}`, done: () => void this.finish(id) }
     this.lanes.set(id, { state: 'needs-user', lastUsed: Date.now() })
     void this.watch(id)
   }
 
   private watching = new Set<string>()
 
-  // Close the login window by itself once the login worked: the prompt box shows up after having been absent.
+  // Close the login page by itself once the login worked: the prompt box shows up after having been absent.
   // Requiring "absent first" keeps sites that show a prompt box to logged-out visitors from closing at once;
   // there the user clicks Done.
   private async watch(id: string) {
@@ -173,9 +175,10 @@ export class LaneManager {
     }
   }
 
-  // The user is done with the login window. Whether it worked is only visible in the page, so look before closing.
+  // The user is done with the login page. Whether it worked is only visible in the page, so look before closing.
   async finish(id: string) {
-    if (this.state(id) !== 'needs-user') return // already handled (Done button, then the hide event)
+    if (this.state(id) !== 'needs-user') return // already handled (Done button, then the auto-close)
+    if (this.shown?.id === id) this.shown = null // frame goes, the page stays loaded for the check below
     this.lanes.set(id, { state: 'checking', lastUsed: Date.now() })
     // Closing right after signing in lands mid-redirect (auth page, then a full reload of the app). A 5s probe there
     // recorded a fresh login as logged-out, so let the page settle and give the app time to draw its prompt box.
@@ -192,7 +195,18 @@ export class LaneManager {
     for (const id of this.lanes.keys()) await this.close(id)
   }
 
+  // Frame size changed or moved: put the shown page under it (rect in CSS px, relative to the main window).
+  place(id: string, r: DOMRect) {
+    void invoke('lane_embed', { id, x: r.x, y: r.y, w: r.width, h: r.height }).catch(() => undefined) // lane may be closing
+  }
+
+  // Frame unmounted: hide the page, it may still be needed for the login check.
+  unplace(id: string) {
+    void invoke('lane_hide', { id }).catch(() => undefined) // already closed is fine
+  }
+
   async close(id: string) {
+    if (this.shown?.id === id) this.shown = null
     await invoke('lane_close', { id })
     this.lanes.set(id, { state: 'cold', lastUsed: 0 })
   }

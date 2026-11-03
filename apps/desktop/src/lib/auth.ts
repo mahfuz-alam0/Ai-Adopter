@@ -15,9 +15,12 @@ export const signOut = () => localStorage.removeItem(KEY)
 
 const b64url = (b: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
-// Browser sign-in: Google blocks sign-in in embedded webviews, so open the default browser and wait for it to
-// hand a one-time code back on a loopback port. The PKCE verifier never leaves this process until the exchange.
-export async function signIn(): Promise<User> {
+const LANE = 'hubauth' // lane id of the sign-in page, a short plain id like every lane (see lib.rs)
+
+// In-app sign-in: the web sign-in page loads in a lane webview (Safari user agent, so Google accepts it) and hands a
+// one-time code back on a loopback port. show(id) asks the UI to put that page on screen, show(null) takes it away;
+// abort cancels. The PKCE verifier never leaves this process until the exchange.
+export async function signIn(show: (id: string | null) => void, signal: AbortSignal): Promise<User> {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)))
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)))
 
@@ -25,6 +28,7 @@ export async function signIn(): Promise<User> {
   let off = () => {}
   const code = new Promise<string>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('Sign-in timed out')), 300_000)
+    signal.addEventListener('abort', () => reject(new Error('Sign-in cancelled')))
     void listen<string>('auth-code', (e) => {
       clearTimeout(t)
       resolve(e.payload)
@@ -33,7 +37,8 @@ export async function signIn(): Promise<User> {
   code.catch(() => undefined) // a timeout after an early failure below must not surface as unhandled
   try {
     const port = await invoke<number>('auth_listen')
-    await invoke('open_url', { url: `${AUTH_URL}/?${new URLSearchParams({ port: String(port), challenge })}` })
+    await invoke('lane_open', { id: LANE, url: `${AUTH_URL}/?${new URLSearchParams({ port: String(port), challenge })}`, sel: '{}' })
+    show(LANE)
     const r = await fetch(`${AUTH_URL}/auth/exchange`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -45,5 +50,7 @@ export async function signIn(): Promise<User> {
     return s.user
   } finally {
     off()
+    show(null)
+    await invoke('lane_close', { id: LANE }).catch(() => undefined)
   }
 }

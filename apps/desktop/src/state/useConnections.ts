@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { LaneManager, canSend } from '../lib/lanes.ts'
-import type { State } from '../lib/lanes.ts'
+import type { Shown, State } from '../lib/lanes.ts'
 import { loadProviders, saveProviders } from '../lib/providers.ts'
 import type { Provider } from '../lib/providers.ts'
 
@@ -28,12 +28,14 @@ export function useConnections(setStatus: (t: string) => void) {
     return all
   })
   const [states, setStates] = useState<Record<string, State>>({})
+  const [shown, setShown] = useState<Shown | null>(null)
 
   // LaneManager is not reactive, so read it on a timer and only re-render when something changed.
   const sync = useCallback(() => {
     const next = Object.fromEntries(providers.map((p) => [p.id, lanes.state(p.id)]))
     localStorage.setItem(LOGINS, JSON.stringify(lanes.ok)) // last known login result survives a restart
     setStates((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
+    setShown((prev) => (prev?.id === lanes.shown?.id ? prev : lanes.shown))
   }, [providers])
   useEffect(() => {
     lanes.onDone = (id, ok) => {
@@ -63,8 +65,8 @@ export function useConnections(setStatus: (t: string) => void) {
   // At least one AI can take a prompt right now.
   const ready = providers.some((p) => canSend(stateOf(p.id)))
 
-  // Open shows the site's window so the user can log in or browse. Done checks the page for a login, then closes
-  // the window; the session stays in the lane's cookie store.
+  // Open shows the site inside the app so the user can log in or browse. Done checks the page for a login, then
+  // closes it; the session stays in the lane's cookie store.
   const toggle = async (p: Provider) => {
     await (lanes.state(p.id) === 'needs-user' ? lanes.finish(p.id) : lanes.login(p.id)).catch((e) => setStatus(String(e)))
     sync()
@@ -75,9 +77,9 @@ export function useConnections(setStatus: (t: string) => void) {
     const next = [...providers, p]
     saveProviders(next)
     setProviders(next)
-    // Always show the login window. Sites like Gemini and ChatGPT give guests a prompt box with a tight limit,
+    // Always show the login page. Sites like Gemini and ChatGPT give guests a prompt box with a tight limit,
     // and a hidden check cannot reliably tell a guest from a login.
-    setStatus(`Log in to ${p.name} in the window that opens, then click Done next to it in the sidebar. ${LOGIN_HINT}`)
+    setStatus(`Log in to ${p.name} below, then click Done. ${LOGIN_HINT}`)
     await lanes.login(p.id).catch((e) => setStatus(String(e)))
     sync()
   }
@@ -90,7 +92,7 @@ export function useConnections(setStatus: (t: string) => void) {
     setProviders(next)
   }
 
-  return { providers, stateOf, ready, toggle, connect, remove, sync, google, toggleGoogle: () => toggleGoogle().catch((e) => setStatus(String(e))) }
+  return { providers, stateOf, ready, toggle, connect, remove, sync, shown, place: lanes.place.bind(lanes), unplace: lanes.unplace.bind(lanes), google, toggleGoogle: () => toggleGoogle().catch((e) => setStatus(String(e))) }
 }
 
 export const LOGIN_HINT = 'Use email or a code, or sign in to Google under Connections first and pick Continue with Google.'

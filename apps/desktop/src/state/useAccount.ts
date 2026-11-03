@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { currentUser, signIn, signOut } from '../lib/auth.ts'
+import { lanes } from './useConnections.ts'
 
 // Optional AI Hub account. It does not log in to the providers; their sessions live in the lane cookie stores.
 export function useAccount(setStatus: (t: string) => void) {
@@ -12,8 +13,8 @@ export function useAccount(setStatus: (t: string) => void) {
       return setUser(null)
     }
     setBusy(true)
-    setStatus('Finish signing in in your browser…')
-    await signIn().then(
+    const ac = new AbortController()
+    await signIn((id) => (lanes.shown = id ? { id, title: 'Sign in to AI Hub', done: () => ac.abort() } : null), ac.signal).then(
       (u) => {
         setUser(u)
         setStatus('')

@@ -73,7 +73,7 @@ export function useThread(conn: ReturnType<typeof useConnections>, setStatus: (t
       if (kind === 'answers') patch(n, (t) => ({ ...t, ms: { ...t.ms, [id]: Date.now() - t0 } }))
       return { text: r.text }
     } catch (e) {
-      const error = e instanceof NeedsUser ? `Log in in the window that just opened, then click Done next to it in the sidebar. ${LOGIN_HINT}` : `Error: ${e instanceof Error ? e.message : String(e)}` // Tauri commands reject with plain strings
+      const error = e instanceof NeedsUser ? `Log in in the panel that just opened, then click Done. ${LOGIN_HINT}` : `Error: ${e instanceof Error ? e.message : String(e)}` // Tauri commands reject with plain strings
       track('error')
       put(n, 'errors', key, error)
       return { error }
