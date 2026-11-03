@@ -31,6 +31,11 @@ async fn lane_open(app: AppHandle, id: String, url: String, sel: String) -> Resu
     let b = WebviewWindowBuilder::new(&app, &id, WebviewUrl::External(url))
         .title(&id)
         .visible(false) // lane_show reveals it once the page has loaded
+        // Tauri's default 800x600 sits on chat sites' mobile/desktop breakpoint: ChatGPT's sidebar flickers open and
+        // shut there. Desktop size keeps every site (and its selectors) on the desktop layout.
+        .inner_size(1100.0, 720.0)
+        .min_inner_size(960.0, 560.0)
+        .center()
         .data_directory(data_dir)
         .background_throttling(BackgroundThrottlingPolicy::Disabled)
         .initialization_script(init_script(&sel)?);
