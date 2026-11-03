@@ -195,9 +195,10 @@ export class LaneManager {
     for (const id of this.lanes.keys()) await this.close(id)
   }
 
-  // Frame size changed or moved: put the shown page under it (rect in CSS px, relative to the main window).
-  place(id: string, r: DOMRect) {
-    void invoke('lane_embed', { id, x: r.x, y: r.y, w: r.width, h: r.height }).catch(() => undefined) // lane may be closing
+  // Frame size changed or moved: put the shown page under it (rect in CSS px, relative to the main window;
+  // viewH is the window's inner height, which Rust needs to line native and page coordinates up).
+  place(id: string, r: DOMRect, viewH: number) {
+    void invoke('lane_embed', { id, x: r.x, y: r.y, w: r.width, h: r.height, viewH }).catch(() => undefined) // lane may be closing
   }
 
   // Frame unmounted: hide the page, it may still be needed for the login check.

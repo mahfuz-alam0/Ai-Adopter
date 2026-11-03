@@ -130,14 +130,21 @@ async fn lane_eval(app: AppHandle, id: String, js: String) -> Result<String, Str
 
 // Show a lane's page inside the main window, at a rect in CSS px (the frame the UI draws for it). The page keeps
 // its session and scripts; only its parent changes. Called again whenever the frame moves or resizes.
+// view_h = the UI's window.innerHeight: macOS insets the page under the title bar, so the page can be shorter than
+// the main webview's native frame, and native coordinates then sit that much above page coordinates.
 #[tauri::command]
-async fn lane_embed(app: AppHandle, id: String, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+async fn lane_embed(app: AppHandle, id: String, x: f64, y: f64, w: f64, h: f64, view_h: f64) -> Result<(), String> {
     let wv = app.get_webview(&id).ok_or("lane not open")?;
+    let main = app.get_webview("main").ok_or("no main webview")?;
     if wv.window().label() != "main" {
-        let main = app.get_window("main").ok_or("no main window")?;
-        wv.reparent(&main).map_err(|e| e.to_string())?;
+        wv.reparent(&main.window()).map_err(|e| e.to_string())?;
     }
-    wv.set_bounds(Rect { position: LogicalPosition::new(x, y).into(), size: LogicalSize::new(w, h).into() }).map_err(|e| e.to_string())?;
+    let scale = main.window().scale_factor().map_err(|e| e.to_string())?;
+    let frame = main.bounds().map_err(|e| e.to_string())?;
+    let (at, size) = (frame.position.to_logical::<f64>(scale), frame.size.to_logical::<f64>(scale));
+    let inset = (size.height - view_h).max(0.0).round();
+    wv.set_bounds(Rect { position: LogicalPosition::new(x + at.x, y + at.y + inset).into(), size: LogicalSize::new(w, h).into() })
+        .map_err(|e| e.to_string())?;
     wv.show().map_err(|e| e.to_string())
 }
 

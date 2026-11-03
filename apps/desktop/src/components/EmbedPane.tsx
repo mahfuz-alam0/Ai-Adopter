@@ -14,7 +14,7 @@ export function EmbedPane() {
     const el = box.current!
     if (!id) return
     d.showModal()
-    const put = () => place(id, el.getBoundingClientRect())
+    const put = () => place(id, el.getBoundingClientRect(), window.innerHeight)
     put()
     const ro = new ResizeObserver(put)
     ro.observe(el)
@@ -34,7 +34,7 @@ export function EmbedPane() {
         e.preventDefault()
         shown?.done()
       }}
-      className="m-auto h-[min(720px,90vh)] w-[min(980px,92vw)] flex-col rounded-2xl border border-line2 bg-panel text-fg shadow-lift open:flex open:animate-rise backdrop:bg-black/50 backdrop:backdrop-blur-md motion-reduce:animate-none"
+      className="m-auto h-[min(720px,90vh)] w-[min(980px,92vw)] flex-col rounded-2xl border border-line2 bg-panel text-fg shadow-lift open:flex backdrop:bg-black/50 backdrop:backdrop-blur-md"
     >
       <div className="flex items-center justify-between gap-4 px-4 py-3">
         <h2 className="text-[15px] font-semibold">{shown?.title}</h2>

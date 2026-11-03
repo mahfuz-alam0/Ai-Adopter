@@ -13,7 +13,6 @@ const action = (s: State) => (s === 'needs-user' ? 'Done' : s === 'logged-out' |
 
 const PANEL = 'M3 5h18v14H3zM9 5v14'
 const PLUS = 'M12 5v14M5 12h14'
-const USER = 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0'
 
 // Line icon on a 24 grid; d may hold several subpaths.
 const Icon = ({ d }: { d: string }) => (
@@ -38,7 +37,7 @@ const Avatar = ({ p, s }: { p: Provider; s: State }) => (
 )
 
 export function Sidebar() {
-  const { providers, stateOf, ready, toggle, remove, reset, setConnectOpen, google, googleBusy, toggleGoogle, remote } = useHub()
+  const { providers, stateOf, ready, toggle, remove, reset, setConnectOpen, remote } = useHub()
   const navigate = useNavigate()
   const waiting = providers.filter((p) => stateOf(p.id) === 'needs-user').length
   const menu = useRef<HTMLDivElement>(null)
@@ -49,7 +48,6 @@ export function Sidebar() {
     localStorage.sidebar = slim ? '' : 'slim'
     setSlim(!slim)
   }
-  const accountLabel = google ? 'Sign out of Google' : 'Sign in with Google'
 
   // One shared menu for every AI, opened at the pointer. The popover API closes it on Escape or an outside click.
   const openMenu = (p: Provider, x: number, y: number) => {
@@ -204,18 +202,6 @@ export function Sidebar() {
           Remove
         </Button>
       </div>
-
-      <Button
-        variant="ghost"
-        className={`mt-2 flex w-full items-center gap-2.5 ${slim ? 'justify-center' : 'text-left'}`}
-        title={slim ? accountLabel : undefined}
-        aria-label={accountLabel}
-        disabled={googleBusy}
-        onClick={() => void toggleGoogle()}
-      >
-        <Icon d={USER} />
-        {!slim && <span className="min-w-0 truncate">{accountLabel}</span>}
-      </Button>
     </aside>
   )
 }

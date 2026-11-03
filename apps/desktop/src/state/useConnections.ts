@@ -102,4 +102,4 @@ export function useConnections(setStatus: (t: string) => void) {
   return { providers, stateOf, ready, toggle, connect, remove, sync, shown, place: lanes.place.bind(lanes), unplace: lanes.unplace.bind(lanes), google, googleBusy, toggleGoogle: () => toggleGoogle().catch((e) => setStatus(String(e))) }
 }
 
-export const LOGIN_HINT = 'Use email or a code, or sign in to Google under Connections first and pick Continue with Google.'
+export const LOGIN_HINT = 'Use email or a code, or sign in on the Google page first and pick Continue with Google.'
