@@ -18,7 +18,7 @@ const prompt = $<HTMLTextAreaElement>('prompt')
 const chip = $('chip')
 
 $('panes').innerHTML = IDS.map(
-  (id) => `<section><h2>${id}<span class="badge" id="b-${id}"></span></h2><pre id="o-${id}"></pre></section>`,
+  (id) => `<section data-p="${id}"><h2>${id}<span class="badge" id="b-${id}"></span></h2><pre id="o-${id}"></pre></section>`,
 ).join('')
 const out = (id: ProviderId) => $<HTMLPreElement>(`o-${id}`)
 

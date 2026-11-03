@@ -1,21 +1,14 @@
 {
-  "name": "ai-hub",
+  "name": "ai-adopter",
   "private": true,
-  "version": "0.1.0",
-  "type": "module",
+  "packageManager": "npm@11.17.0",
+  "workspaces": ["apps/*"],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "tauri": "tauri",
-    "test": "node src/router.test.ts"
-  },
-  "dependencies": {
-    "@tauri-apps/api": "^2"
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
-    "typescript": "~6.0.3",
-    "vite": "^8.0.16"
+    "turbo": "^2"
   }
 }
