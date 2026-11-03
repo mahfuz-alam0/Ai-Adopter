@@ -6,6 +6,9 @@ import type { Provider } from '../lib/providers.ts'
 
 // One manager for the whole app: it owns the hidden provider webviews.
 export const lanes = new LaneManager({})
+// A hot update re-runs this module and makes an empty manager while React keeps its state, so register() never
+// runs again and lanes lose their URLs. Reload the page instead.
+import.meta.hot?.accept(() => location.reload())
 
 const LOGINS = 'logins'
 const register = (p: Provider) => {

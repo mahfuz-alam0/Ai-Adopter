@@ -169,11 +169,17 @@ export class LaneManager {
   }
 
   // Best effort: a slow or navigating page must not keep the login window from showing.
+  // A new window answers from its blank start page (already "complete"), and app pages keep drawing after load,
+  // so wait for the real page to stop adding elements. Otherwise the window flashes through blank, shell, then app.
   private async loaded(id: string, timeoutMs = 8_000) {
     const end = Date.now() + timeoutMs
+    const js = `location.protocol.startsWith('http') && document.readyState === 'complete' ? location.href + ' ' + document.getElementsByTagName('*').length : ''`
+    let last = ''
     while (Date.now() < end) {
-      if ((await evalJs<string>(id, 'document.readyState', 2_000).catch(() => '')) === 'complete') return
-      await sleep(200)
+      const now = await evalJs<string>(id, js, 2_000).catch(() => '')
+      if (now && now === last) return
+      last = now
+      await sleep(300)
     }
   }
 
