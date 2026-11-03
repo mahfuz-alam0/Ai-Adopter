@@ -3,7 +3,8 @@
 (() => {
   // Best-effort guesses for sites with no verified selectors; entries in window.__SEL win.
   const D = {
-    input: 'textarea, div[contenteditable="true"], [role="textbox"]',
+    // Captchas (hCaptcha, reCAPTCHA) add hidden response textareas to login pages; never a prompt box.
+    input: 'textarea:not([name*="captcha" i]), div[contenteditable="true"], [role="textbox"]',
     send: 'button[type="submit"], button[aria-label*="send" i], button[data-testid*="send" i]',
     stop: 'button[aria-label*="stop" i], button[data-testid*="stop" i]',
     reply: '[data-message-author-role="assistant"], [class*="markdown"], [class*="assistant" i]',
@@ -14,7 +15,9 @@
   const shown = (s) => [...document.querySelectorAll(s)].find((e) => e.getClientRects().length)
   // The prompt box is the login signal, and a redesign breaks the preset input selector first. Without this
   // fallback a logged-in lane read as logged out, so the login window never closed and sending stayed off.
-  const box = () => $(S.input) || shown(D.input)
+  // Only a laid-out box counts: DeepSeek's sign-in page gains a hidden captcha textarea when "Log in with Google"
+  // is clicked, which read as a login, closed the modal over the captcha and marked the lane logged in.
+  const box = () => shown(S.input) || shown(D.input)
   const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
   // Lanes run in hidden windows. WebKit reports a hidden page as hidden and pauses requestAnimationFrame there,

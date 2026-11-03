@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
-use tauri::webview::{NewWindowFeatures, NewWindowResponse};
+use tauri::webview::{NewWindowFeatures, NewWindowResponse, PageLoadEvent};
 use tauri::{utils::config::BackgroundThrottlingPolicy, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, Webview, WebviewUrl, WebviewWindowBuilder};
 
 // Lane script = provider selectors (JSON from the frontend) + shared driver. Provider windows get no
@@ -252,6 +252,19 @@ fn auth_listen(app: AppHandle) -> Result<u16, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // A reload of the UI forgets which lane page it put on screen, but the native page stays over the new UI.
+        .on_page_load(|wv, payload| {
+            if wv.label() != "main" || !matches!(payload.event(), PageLoadEvent::Started) {
+                return;
+            }
+            let app = wv.app_handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let stale: Vec<String> = app.webviews().into_iter().filter(|(l, w)| l != "main" && w.window().label() == "main").map(|(l, _)| l).collect();
+                for id in stale {
+                    let _ = lane_close(app.clone(), id).await;
+                }
+            });
+        })
         .invoke_handler(tauri::generate_handler![lane_open, google_signed_in, google_signout, lane_eval, lane_embed, lane_hide, lane_close, auth_listen, dev_log])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
