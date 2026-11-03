@@ -36,8 +36,6 @@ export const PRESETS: Provider[] = [
   { id: 'deepseek', name: 'DeepSeek', url: 'https://chat.deepseek.com/', color: '#4d6bfe' },
   { id: 'mistral', name: 'Mistral', url: 'https://chat.mistral.ai/chat', color: '#fa520f' },
   { id: 'qwen', name: 'Qwen', url: 'https://chat.qwen.ai/', color: '#6c5ce7' },
-  { id: 'kimi', name: 'Kimi', url: 'https://www.kimi.com/', color: '#1783ff' },
-  { id: 'meta', name: 'Meta AI', url: 'https://www.meta.ai/', color: '#3d7bff' },
   { id: 'zai', name: 'Z.ai (GLM)', url: 'https://chat.z.ai/', color: '#f5a524' },
 ]
 

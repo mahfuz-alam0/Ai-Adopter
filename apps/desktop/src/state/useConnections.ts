@@ -62,6 +62,12 @@ export function useConnections(setStatus: (t: string) => void) {
     const next = [...providers, p]
     saveProviders(next)
     setProviders(next)
+    setStatus(`Checking ${p.name}…`)
+    // Already logged in from an earlier session: add it quietly, no window.
+    if (await lanes.attach(p.id)) {
+      setStatus('')
+      return sync()
+    }
     setStatus(`Log in to ${p.name} in the window that opens, then click Done next to it in the sidebar. ${LOGIN_HINT}`)
     await lanes.login(p.id).catch((e) => setStatus(String(e)))
     sync()

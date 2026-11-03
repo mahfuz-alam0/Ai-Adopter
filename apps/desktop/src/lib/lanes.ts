@@ -59,7 +59,8 @@ export class LaneManager {
     void listen<string>('lane-hidden', (e) => void this.finish(e.payload)).catch(() => undefined) // no Tauri in plain-browser dev
   }
 
-  run<T>(id: string, fn: () => Promise<T>, quiet = false): Promise<T> {
+  // quiet = probe timeout in ms for a background run: a lane that is not ready is closed and the run fails, with no login window.
+  run<T>(id: string, fn: () => Promise<T>, quiet?: number): Promise<T> {
     const prev = this.queue.get(id) ?? Promise.resolve()
     const next = prev
       .catch(() => undefined)
@@ -78,8 +79,14 @@ export class LaneManager {
   // Load known-good lanes in the background so the first prompt skips the page load. Never shows a window.
   warm(ids: string[]) {
     for (const id of ids.slice(0, this.maxLive)) {
-      if (this.state(id) === 'cold') void this.run(id, async () => undefined, true).catch(() => undefined)
+      if (this.state(id) === 'cold') void this.run(id, async () => undefined, 20_000).catch(() => undefined)
     }
+  }
+
+  // A just-added AI may already be logged in (cookies persist on disk). True when its page shows the prompt box,
+  // so no login window is needed. Short timeout: a logged-out site never shows the box and the user is waiting.
+  attach(id: string) {
+    return this.run(id, async () => true, 8_000).catch(() => false)
   }
 
   state(id: string): State {
@@ -160,10 +167,10 @@ export class LaneManager {
     }
   }
 
-  private async acquire(id: string, quiet: boolean) {
+  private async acquire(id: string, quiet?: number) {
     const lane = this.lanes.get(id)
     await this.open(id)
-    if (!lane || lane.state !== 'ready') await this.waitReady(id, 20_000, quiet)
+    if (!lane || lane.state !== 'ready') await this.waitReady(id, quiet)
     this.lanes.set(id, { state: 'busy', lastUsed: Date.now() })
     await this.evict(id)
   }
@@ -181,12 +188,12 @@ export class LaneManager {
     return false
   }
 
-  // quiet (background warm-up): a slow page must not flip a known login to logged-out or pop a window.
-  private async waitReady(id: string, timeoutMs = 20_000, quiet = false) {
-    const ok = await this.probe(id, timeoutMs)
-    if (!quiet || ok) this.ok[id] = ok
+  // quiet (background run): a slow page must not flip a known login to logged-out or pop a window.
+  private async waitReady(id: string, quiet?: number) {
+    const ok = await this.probe(id, quiet ?? 20_000)
+    if (quiet === undefined || ok) this.ok[id] = ok
     if (ok) return
-    if (quiet) {
+    if (quiet !== undefined) {
       await this.close(id)
       throw new Error(`${id} did not load`)
     }
@@ -237,6 +244,7 @@ export async function ask(
     if (s.count <= before.count) continue
     if (s.text !== last) {
       last = s.text
+      quietSince = 0 // text still moving, so a missing stop button does not mean done
       if (s.text && !writing) {
         writing = true
         onPhase('writing')
@@ -248,7 +256,7 @@ export async function ask(
       continue
     }
     quietSince ||= Date.now()
-    if (Date.now() - quietSince > 1500) return { text: last, url: s.url }
+    if (Date.now() - quietSince > 600) return { text: last, url: s.url } // every ms here is added to each answer
   }
   throw new Error(`${lane} timed out`)
 }
