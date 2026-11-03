@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import type { Selectors } from './providers.ts'
 
 export type State = 'cold' | 'ready' | 'busy' | 'needs-user'
 interface Lane { state: State; lastUsed: number }
@@ -30,10 +31,13 @@ export class LaneManager {
   private lanes = new Map<string, Lane>()
   private queue = new Map<string, Promise<unknown>>()
 
+  // Per-lane selector overrides, injected into the page on open. No entry = base.js auto-detect.
+  sels: Record<string, Selectors | undefined> = {}
+
   // urls is mutable on purpose: callers store the conversation URL after a reply so a cold lane resumes the thread.
   constructor(
     public urls: Record<string, string>,
-    private maxLive = 2,
+    private maxLive = 4,
     private idleMs = 180_000,
   ) {
     setInterval(() => void this.sweep(), 15_000)
@@ -64,6 +68,13 @@ export class LaneManager {
     return s === 'ready' || s === 'busy'
   }
 
+  // Show the provider window so the user can sign in. Cookies persist in its own store; close() hides it again.
+  async login(id: string) {
+    await this.open(id, true)
+    await invoke('lane_show', { id })
+    this.lanes.set(id, { state: 'needs-user', lastUsed: Date.now() })
+  }
+
   async closeAll() {
     for (const id of this.lanes.keys()) await this.close(id)
   }
@@ -73,9 +84,13 @@ export class LaneManager {
     this.lanes.set(id, { state: 'cold', lastUsed: 0 })
   }
 
+  private open(id: string, show: boolean) {
+    return invoke('lane_open', { id, url: this.urls[id], show, sel: JSON.stringify(this.sels[id] ?? {}) })
+  }
+
   private async acquire(id: string) {
     const lane = this.lanes.get(id)
-    await invoke('lane_open', { id, url: this.urls[id], show: false })
+    await this.open(id, false)
     if (!lane || lane.state !== 'ready') await this.waitReady(id)
     this.lanes.set(id, { state: 'busy', lastUsed: Date.now() })
     await this.evict(id)
@@ -88,8 +103,7 @@ export class LaneManager {
       if (ok === true) return
       await sleep(500)
     }
-    this.lanes.set(id, { state: 'needs-user', lastUsed: Date.now() })
-    await invoke('lane_show', { id })
+    await this.login(id)
     throw new NeedsUser(id)
   }
 

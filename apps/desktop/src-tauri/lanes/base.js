@@ -1,7 +1,14 @@
-// Shared lane driver. Reads selectors from window.__SEL (set by the provider file above it).
+// Shared lane driver. Reads selectors from window.__SEL (injected above it from the provider config).
 // Every method returns a JSON string and never throws: exceptions are invisible to eval_with_callback on Windows.
 (() => {
-  const S = window.__SEL
+  // Best-effort guesses for sites with no verified selectors; entries in window.__SEL win.
+  const S = {
+    input: 'textarea, div[contenteditable="true"], [role="textbox"]',
+    send: 'button[type="submit"], button[aria-label*="send" i], button[data-testid*="send" i]',
+    stop: 'button[aria-label*="stop" i], button[data-testid*="stop" i]',
+    reply: '[data-message-author-role="assistant"], [class*="markdown"], [class*="assistant" i]',
+    ...window.__SEL,
+  }
   const $ = (s) => document.querySelector(s)
   const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -17,7 +24,9 @@
           if (btn && !btn.disabled) break
           await wait(100)
         }
-        $(S.send).click()
+        const btn = $(S.send)
+        if (btn) btn.click()
+        else $(S.input).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
       } catch (e) {
         window.__lane.err = String(e)
       }

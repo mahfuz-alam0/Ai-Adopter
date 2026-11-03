@@ -1,30 +1,36 @@
 use tauri::{utils::config::BackgroundThrottlingPolicy, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
-// Lane script = provider selectors + shared driver. Provider windows get no capability,
-// so these scripts cannot reach Rust; Rust only reaches them through eval.
-fn init_script(id: &str) -> String {
-    let sel = match id {
-        "chatgpt" => include_str!("../lanes/chatgpt.js"),
-        "claude" => include_str!("../lanes/claude.js"),
-        "gemini" => include_str!("../lanes/gemini.js"),
-        _ => return String::new(),
-    };
-    format!("{sel}\n{}", include_str!("../lanes/base.js"))
+// Lane script = provider selectors (JSON from the frontend) + shared driver. Provider windows get no
+// capability, so these scripts cannot reach Rust; Rust only reaches them through eval.
+fn init_script(sel: &str) -> Result<String, String> {
+    // Parse and re-serialize so only valid JSON ever lands in the page script.
+    let sel: serde_json::Value = serde_json::from_str(sel).map_err(|e| e.to_string())?;
+    if !sel.is_object() {
+        return Err("sel must be a JSON object".into());
+    }
+    Ok(format!("window.__SEL = {sel};\n{}", include_str!("../lanes/base.js")))
 }
 
 #[tauri::command]
-async fn lane_open(app: AppHandle, id: String, url: String, show: bool) -> Result<(), String> {
+async fn lane_open(app: AppHandle, id: String, url: String, show: bool, sel: String) -> Result<(), String> {
+    // The id is a window label, a data-dir name, and the macOS store identifier (16 bytes), so keep it short and plain.
+    if id.is_empty() || id.len() > 16 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        return Err("bad lane id".into());
+    }
     if app.get_webview_window(&id).is_some() {
         return Ok(());
     }
     let url: tauri::Url = url.parse().map_err(|e| format!("{e}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("lane url must be http(s)".into());
+    }
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join(&id);
     let b = WebviewWindowBuilder::new(&app, &id, WebviewUrl::External(url))
         .title(&id)
         .visible(show)
         .data_directory(data_dir)
         .background_throttling(BackgroundThrottlingPolicy::Disabled)
-        .initialization_script(init_script(&id));
+        .initialization_script(init_script(&sel)?);
     // macOS ignores data_directory; a per-provider store id keeps cookies apart (macOS 14+).
     #[cfg(target_os = "macos")]
     let b = {
