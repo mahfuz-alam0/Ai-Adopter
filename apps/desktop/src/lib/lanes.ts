@@ -99,12 +99,6 @@ export class LaneManager {
     }
   }
 
-  // A just-added AI may already be logged in (cookies persist on disk). True when its page shows the prompt box,
-  // so no login window is needed. Short timeout: a logged-out site never shows the box and the user is waiting.
-  attach(id: string) {
-    return this.run(id, async () => true, 8_000).catch(() => false)
-  }
-
   state(id: string): State {
     const s = this.lanes.get(id)?.state
     if (s && s !== 'cold') return s
