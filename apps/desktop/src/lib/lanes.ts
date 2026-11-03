@@ -15,6 +15,8 @@ export const canSend = (s: State) => s !== 'needs-user' && s !== 'logged-out' &&
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const GOOGLE = 'google' // lane id of the shared Google session, matches lib.rs
+// The chooser lists the accounts Google remembers, even with a session stored, and lands on myaccount once one is picked or signed in.
+const CHOOSER = `https://accounts.google.com/AccountChooser?continue=${encodeURIComponent('https://myaccount.google.com/')}`
 
 // Dev timing log: one Marks per lane for the run in flight (runs on a lane are serialized). See devlog.ts.
 const traces: Record<string, Marks | undefined> = {}
@@ -81,15 +83,19 @@ export class LaneManager {
   google = false
   private googleDone = false
 
-  // Sign in to Google once, in the frame inside the app. True once the session cookie exists; false if Done came first.
+  // Sign in to Google once, in the frame inside the app. The user picks or adds an account; true once the session cookie exists.
   async googleLogin() {
     this.googleDone = false
-    await invoke('lane_open', { id: GOOGLE, url: 'https://accounts.google.com/', sel: '{}' })
+    await invoke('lane_open', { id: GOOGLE, url: CHOOSER, sel: '{}' })
+    // An open window (warm-up copy, earlier sign-in) keeps whatever page it was left on.
+    await evalJs(GOOGLE, `location.replace(${JSON.stringify(CHOOSER)})`, 2_000).catch(() => undefined)
     await this.loaded(GOOGLE)
     this.shown = { id: GOOGLE, title: 'Sign in to Google', done: () => (this.googleDone = true) }
     const signedIn = () => invoke<boolean>('google_signed_in').catch(() => false)
-    while (!this.googleDone && !(await signedIn())) await sleep(1_000)
-    const ok = await signedIn() // Done right after signing in lands here with the flag set
+    // Not the SID cookie: a stored session has it before the user chose anything, which closed the modal at once.
+    const picked = async () => (await evalJs<string>(GOOGLE, 'location.hostname', 2_000).catch(() => '')) === 'myaccount.google.com'
+    while (!this.googleDone && !(await picked())) await sleep(1_000)
+    const ok = await signedIn()
     if (ok) {
       // Lanes opened before the sign-in have no copy yet.
       for (const [id, l] of this.lanes) if (l.state !== 'cold') await invoke('google_sync', { id }).catch(() => undefined)
