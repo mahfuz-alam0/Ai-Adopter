@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
 
 # Editor directories and files
 .vscode/*
@@ -29,3 +30,7 @@ dist-ssr
 # Rust
 target
 /graphify-out
+
+# Next.js
+.next
+next-env.d.ts

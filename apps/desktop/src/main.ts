@@ -2,6 +2,7 @@ import { LaneManager, NeedsUser, ask } from './lanes.ts'
 import type { State } from './lanes.ts'
 import { PRESETS, customId, loadProviders, saveProviders } from './providers.ts'
 import type { Provider, Selectors } from './providers.ts'
+import { currentUser, signIn, signOut } from './auth.ts'
 import { parseVerdicts, reviewPrompt } from './cross.ts'
 import type { Verdict } from './cross.ts'
 
@@ -251,6 +252,20 @@ prompt.onkeydown = (e) => {
     form.requestSubmit()
   }
 }
+// Optional AI Hub account. It does not log in to the providers; their sessions live in the lane cookie stores.
+const account = $<HTMLButtonElement>('account')
+const showAccount = () => (account.textContent = currentUser() ? `${currentUser()!.email} · Sign out` : 'Sign in with Google')
+account.onclick = async () => {
+  if (currentUser()) signOut()
+  else {
+    account.disabled = true
+    setStatus('Finish signing in in your browser…')
+    await signIn().then(() => setStatus(''), (e) => setStatus(String(e)))
+    account.disabled = false
+  }
+  showAccount()
+}
+showAccount()
 $('nav').onclick = (e) => {
   const b = (e.target as HTMLElement).closest('button')
   if (!b) return

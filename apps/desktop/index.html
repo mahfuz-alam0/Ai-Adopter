@@ -23,6 +23,7 @@
       nav { display: flex; gap: 4px; align-self: stretch }
       nav button { padding: 0 14px; color: var(--muted); background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0 }
       nav button[aria-current=true] { color: var(--text); border-bottom-color: var(--accent) }
+      #account { margin-left: auto; font-size: 13px }
       .view { flex: 1; min-height: 0; display: flex; flex-direction: column }
       .view[hidden] { display: none }
       #apps { overflow: auto }
@@ -113,6 +114,7 @@
         <button type="button" data-v="apps" aria-current="true">Apps</button>
         <button type="button" data-v="compare" aria-current="false">Compare</button>
       </nav>
+      <button type="button" id="account"></button>
     </header>
     <div id="status" role="status"></div>
     <main id="apps" class="view">

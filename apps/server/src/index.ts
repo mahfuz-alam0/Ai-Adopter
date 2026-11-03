@@ -1,15 +1,47 @@
 import { createServer } from 'node:http'
+import { callback, exchange, logout, me, start } from './auth.ts'
 
-export const server = createServer((req, res) => {
-  if (req.method === 'GET' && req.url === '/health') {
-    res.writeHead(200, { 'content-type': 'application/json' })
-    return void res.end(JSON.stringify({ ok: true }))
+// The desktop webview calls /auth/exchange and /me cross-origin: tauri://localhost (macOS, Linux),
+// http://tauri.localhost (Windows), http://localhost:1420 (tauri dev). Those calls arrive through apps/web's
+// proxy, which forwards Origin and the CORS reply untouched.
+const origins = (process.env.ALLOWED_ORIGINS ?? 'tauri://localhost,http://tauri.localhost,http://localhost:1420').split(',')
+
+export const server = createServer(async (req, res) => {
+  const origin = req.headers.origin
+  if (origin && origins.includes(origin)) {
+    res.setHeader('access-control-allow-origin', origin)
+    res.setHeader('access-control-allow-headers', 'authorization, content-type')
+    res.setHeader('vary', 'origin')
   }
-  res.writeHead(404).end()
+  if (req.method === 'OPTIONS') return void res.writeHead(204).end()
+
+  const url = new URL(req.url ?? '/', 'http://localhost')
+  try {
+    switch (`${req.method} ${url.pathname}`) {
+      case 'GET /health':
+        res.writeHead(200, { 'content-type': 'application/json' })
+        return void res.end(JSON.stringify({ ok: true }))
+      case 'GET /logout':
+        return logout(res)
+      case 'GET /auth/google':
+        return start(res, url.searchParams)
+      case 'GET /auth/google/callback':
+        return await callback(req, res, url.searchParams)
+      case 'POST /auth/exchange':
+        return await exchange(req, res)
+      case 'GET /me':
+        return me(req, res)
+    }
+    res.writeHead(404).end()
+  } catch (e) {
+    console.error(e)
+    if (!res.headersSent) res.writeHead(500)
+    res.end()
+  }
 })
 
 // Skip listen when imported by the test.
 if (process.argv[1] === import.meta.filename) {
-  const port = Number(process.env.PORT ?? 3000)
+  const port = Number(process.env.PORT ?? 4000)
   server.listen(port, () => console.log(`server on :${port}`))
 }

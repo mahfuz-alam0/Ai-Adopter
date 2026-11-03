@@ -1,4 +1,7 @@
-use tauri::{utils::config::BackgroundThrottlingPolicy, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::time::{Duration, Instant};
+use tauri::{utils::config::BackgroundThrottlingPolicy, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 // Lane script = provider selectors (JSON from the frontend) + shared driver. Provider windows get no
 // capability, so these scripts cannot reach Rust; Rust only reaches them through eval.
@@ -72,10 +75,71 @@ async fn lane_close(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
+// Open a sign-in page in the user's default browser. Google refuses sign-in inside embedded webviews.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let url: tauri::Url = url.parse().map_err(|e| format!("{e}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("url must be http(s)".into());
+    }
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(opener).arg(url.as_str()).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+// One-shot loopback listener for the sign-in redirect. Returns the port; emits "auth-code" with the
+// one-time code from GET /cb?code=..., then stops. Gives up after 5 minutes.
+#[tauri::command]
+fn auth_listen(app: AppHandle) -> Result<u16, String> {
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(300);
+        while Instant::now() < deadline {
+            let Ok((mut stream, _)) = listener.accept() else {
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            };
+            // Accepted sockets can inherit non-blocking mode (macOS), so reset it.
+            let _ = stream.set_nonblocking(false);
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+            let mut buf = [0u8; 2048];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let head = String::from_utf8_lossy(&buf[..n]);
+            let code = head
+                .lines()
+                .next()
+                .and_then(|l| l.strip_prefix("GET /cb?code="))
+                .and_then(|l| l.split(' ').next())
+                .filter(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'));
+            let (status, msg) = match code {
+                Some(_) => ("200 OK", "Signed in. You can close this tab and return to AI Hub."),
+                None => ("404 Not Found", "Not found."),
+            };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{msg}",
+                msg.len()
+            );
+            if let Some(c) = code {
+                let _ = app.emit("auth-code", c);
+                break;
+            }
+        }
+    });
+    Ok(port)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![lane_open, lane_eval, lane_show, lane_close])
+        .invoke_handler(tauri::generate_handler![lane_open, lane_eval, lane_show, lane_close, open_url, auth_listen])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

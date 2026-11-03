@@ -13,9 +13,17 @@ npm workspaces + Turborepo. Node 24 (runs `.ts` natively, no build step for test
   - `src/cross.ts` — pure: `reviewPrompt()` and `parseVerdicts()` for Cross-check.
   - `src/lanes.ts` — `LaneManager` (per-lane queue, max 4 live, idle sweep, eviction, `login()`) and `ask()` (send + poll until streaming stops).
   - `src/main.ts` — Apps tiles, Compare hub DOM, wires, add dialog, modes, thread context replay.
-  - `src-tauri/src/lib.rs` — Rust commands: `lane_open` (takes the selector JSON), `lane_eval`, `lane_show`, `lane_close`.
+  - `src/auth.ts` — Google sign-in client (see below).
+  - `src-tauri/src/lib.rs` — Rust commands: `lane_open` (takes the selector JSON), `lane_eval`, `lane_show`, `lane_close`, `open_url`, `auth_listen`.
   - `src-tauri/lanes/base.js` — shared driver (`window.__lane.ready/send/read`) with auto-detect default selectors. Per-provider selectors arrive as `window.__SEL`, injected by Rust.
-- `apps/server` — bare `node:http` server, `/health` only. Placeholder.
+- `apps/server` — bare `node:http` server (port 4000), no dependencies. `src/index.ts` routes, `src/auth.ts` holds Google sign-in, PKCE code exchange, signed sessions. No pages: apps/web is its face.
+- `apps/web` — Next.js (App Router, port 3000). The public origin for sign-in: `app/page.tsx` is the sign-in page, `next.config.ts` proxies `/auth/*`, `/logout` and `/me` to the server. Only login so far.
+
+## Google sign-in (AI Hub account)
+
+Optional, identity only: it does not log in to Claude, ChatGPT, etc. Those sites keep their own sessions in the lane cookie stores, and Google blocks its own sign-in inside embedded webviews, so provider logins use email or code on the provider site.
+
+Flow: desktop `signIn()` (`apps/desktop/src/auth.ts`) starts a loopback listener (`auth_listen`) and opens `apps/web` `/?port&challenge` in the default browser (`open_url`). The page links to `/auth/google?port&challenge`, which the proxy passes to `apps/server`. The server runs Google OAuth, redirects the browser to `http://127.0.0.1:<port>/cb?code=<one-time>`, and the app redeems it at `POST /auth/exchange` (also via the proxy) with the PKCE verifier for a signed session token. Without `port`/`challenge`, `/` is the plain web sign-in and the server sets a session cookie. `BASE_URL` in the server env is apps/web's public URL (Google's redirect target); desktop reads `VITE_AUTH_URL` (default `http://localhost:3000`). Server env vars: see `apps/server/.env.example`. Server tests fake Google's token endpoint via `GOOGLE_TOKEN_URL`.
 
 ## Commands
 
@@ -23,6 +31,7 @@ Run from repo root.
 
 - `npm run dev:tauri` — desktop app with hot reload
 - `npm run dev:server` — server with `--watch`
+- `npm run dev:web` — web (3000) plus server (4000); needed for sign-in
 - `npm run build:tauri` — bundled desktop app
 - `npm run build:server` / `npm run build` — via turbo
 - `npm test` — all tests. Single: `npm test -w desktop` or `npm test -w server`
