@@ -9,12 +9,18 @@ export function EmbedPane() {
   const dialog = useRef<HTMLDialogElement>(null)
   const box = useRef<HTMLDivElement>(null)
   const id = shown?.id
+  // The modal opens at once; the page goes over it only once it has rendered.
+  const live = shown && !shown.loading ? id : undefined
   useEffect(() => {
     const d = dialog.current!
-    const el = box.current!
     if (!id) return
     d.showModal()
-    const put = () => place(id, el.getBoundingClientRect(), window.innerHeight)
+    return () => d.close()
+  }, [id])
+  useEffect(() => {
+    const el = box.current!
+    if (!live) return
+    const put = () => place(live, el.getBoundingClientRect(), window.innerHeight)
     put()
     const ro = new ResizeObserver(put)
     ro.observe(el)
@@ -22,10 +28,9 @@ export function EmbedPane() {
     return () => {
       ro.disconnect()
       window.removeEventListener('resize', put)
-      unplace(id)
-      d.close()
+      unplace(live)
     }
-  }, [id])
+  }, [live])
   return (
     <dialog
       ref={dialog}
@@ -42,7 +47,9 @@ export function EmbedPane() {
           Done
         </Button>
       </div>
-      <div ref={box} className="mx-4 mb-4 min-h-0 flex-1" />
+      <div ref={box} className="mx-4 mb-4 grid min-h-0 flex-1 place-items-center font-mono text-xs text-muted">
+        {shown?.loading && '> loading page'}
+      </div>
     </dialog>
   )
 }

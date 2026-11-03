@@ -14,6 +14,7 @@ export type Phase = 'idle' | 'connecting' | 'sending' | 'thinking' | 'writing' |
 export const canSend = (s: State) => s !== 'needs-user' && s !== 'logged-out' && s !== 'checking'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const SETTLE_MS = 6_000 // see probe()
 const GOOGLE = 'google' // lane id of the shared Google session, matches lib.rs
 // The chooser lists the accounts Google remembers, even with a session stored, and lands on myaccount once one is picked or signed in.
 const CHOOSER = `https://accounts.google.com/AccountChooser?continue=${encodeURIComponent('https://myaccount.google.com/')}`
@@ -46,7 +47,9 @@ export async function evalJs<T>(id: string, js: string, timeoutMs = 10_000): Pro
 }
 
 // The lane page shown inside the main window: the UI draws a frame with a Done button and reports its rect to place().
-export interface Shown { id: string; title: string; done: () => void }
+// loading: the frame is up but the page is not placed yet (a half-drawn page looks broken). Replaced, never mutated,
+// so the UI can compare by reference.
+export interface Shown { id: string; title: string; done: () => void; loading?: boolean }
 
 export class NeedsUser extends Error {
   constructor(public lane: string) {
@@ -86,20 +89,20 @@ export class LaneManager {
   // Sign in to Google once, in the frame inside the app. The user picks or adds an account; true once the session cookie exists.
   async googleLogin() {
     this.googleDone = false
-    await invoke('lane_open', { id: GOOGLE, url: CHOOSER, sel: '{}' })
+    this.shown = { id: GOOGLE, title: 'Sign in to Google', loading: true, done: () => (this.googleDone = true) }
+    await invoke('lane_open', { id: GOOGLE, url: CHOOSER, sel: '{}' }).catch((e) => {
+      this.shown = null
+      throw e
+    })
     // An open window (warm-up copy, earlier sign-in) keeps whatever page it was left on.
     await evalJs(GOOGLE, `location.replace(${JSON.stringify(CHOOSER)})`, 2_000).catch(() => undefined)
     await this.loaded(GOOGLE)
-    this.shown = { id: GOOGLE, title: 'Sign in to Google', done: () => (this.googleDone = true) }
-    const signedIn = () => invoke<boolean>('google_signed_in').catch(() => false)
+    this.reveal(GOOGLE)
     // Not the SID cookie: a stored session has it before the user chose anything, which closed the modal at once.
     const picked = async () => (await evalJs<string>(GOOGLE, 'location.hostname', 2_000).catch(() => '')) === 'myaccount.google.com'
     while (!this.googleDone && !(await picked())) await sleep(1_000)
-    const ok = await signedIn()
-    if (ok) {
-      // Lanes opened before the sign-in have no copy yet.
-      for (const [id, l] of this.lanes) if (l.state !== 'cold') await invoke('google_sync', { id }).catch(() => undefined)
-    }
+    // Open lanes need no copy: only a login page uses the Google session, and login() copies it in.
+    const ok = await invoke<boolean>('google_signed_in').catch(() => false)
     await this.close(GOOGLE)
     this.google = ok
     return ok
@@ -149,12 +152,21 @@ export class LaneManager {
 
   // Show the provider page in the app so the user can sign in. Cookies persist in its own store; close() drops it again.
   async login(id: string) {
-    await this.open(id)
-    // Reveal only once the page has rendered; a page that shows blank or half-drawn looks broken.
-    await this.loaded(id)
-    this.shown = { id, title: `Log in to ${this.names[id] ?? id}`, done: () => void this.finish(id) }
+    // The frame goes up at once (with a loading line), so the click visibly does something; the page follows
+    // once it has rendered, since a page that shows blank or half-drawn looks broken.
     this.lanes.set(id, { state: 'needs-user', lastUsed: Date.now() })
+    this.shown = { id, title: `Log in to ${this.names[id] ?? id}`, loading: true, done: () => void this.finish(id) }
+    await this.open(id, this.google).catch(async (e) => {
+      await this.close(id).catch(() => undefined) // no modal left spinning on a lane that never opened
+      throw e
+    })
+    await this.loaded(id)
+    this.reveal(id)
     void this.watch(id)
+  }
+
+  private reveal(id: string) {
+    if (this.shown?.id === id) this.shown = { ...this.shown, loading: false } // Done may have closed it meanwhile
   }
 
   private watching = new Set<string>()
@@ -218,8 +230,9 @@ export class LaneManager {
     this.lanes.set(id, { state: 'cold', lastUsed: 0 })
   }
 
-  private open(id: string) {
-    return invoke('lane_open', { id, url: this.urls[id], sel: JSON.stringify(this.sels[id] ?? {}), google: this.google })
+  // google: copy the shared Google session in (login only, see lib.rs: it stalls the main thread while it runs).
+  private open(id: string, google = false) {
+    return invoke('lane_open', { id, url: this.urls[id], sel: JSON.stringify(this.sels[id] ?? {}), google })
   }
 
   // Best effort: a slow or navigating page must not keep the login window from showing.
@@ -253,10 +266,21 @@ export class LaneManager {
     return (await evalJs<boolean>(id, 'window.__lane ? window.__lane.ready() : "false"', 3_000).catch(() => false)) === true
   }
 
+  // True once the prompt box shows. False once the page has loaded and sat on one URL for SETTLE_MS without one
+  // (a login page, a challenge): waiting out the whole timeout there kept prompts on "Connecting" for 20s and
+  // more before the login box even came up. ponytail: fixed settle time; a page slower than that to draw its
+  // prompt box reads as logged out once, and the login box then closes itself when the box appears.
   private async probe(id: string, timeoutMs: number) {
     const end = Date.now() + timeoutMs
+    // '' = ready, '-' = still loading (or no answer), else the URL of a loaded page without a prompt box.
+    const js = `window.__lane && window.__lane.ready() === 'true' ? '' : location.protocol.startsWith('http') && document.readyState === 'complete' ? location.href : '-'`
+    let at = '-'
+    let since = 0
     while (Date.now() < end) {
-      if (await this.isReady(id)) return true
+      const s = await evalJs<string>(id, js, 3_000).catch(() => '-')
+      if (s === '') return true
+      if (s !== at) [at, since] = [s, Date.now()]
+      else if (s !== '-' && Date.now() - since > SETTLE_MS) return false
       await sleep(200)
     }
     return false
@@ -345,9 +369,10 @@ export async function ask(
       polls.fromPageMax = Math.max(polls.fromPageMax, from)
       if (s.err) throw new Error(`${lane}: ${s.err}`)
       // A prompt that landed shows a stop button, an open stream or a new reply within seconds. None of them after 20s
-      // means it never went out; fail now instead of spinning to the full timeout.
-      if (s.count <= before.count && !s.streaming && !s.net && Date.now() - sentAt > 20_000) {
-        throw new Error(`${lane}: no reply started, the prompt was probably not sent`)
+      // means it never went out, or the reply landed where the reply selector does not look (a stream that already
+      // ended counts as none: it left the card on "Thinking" until the 3 minute timeout). Fail now instead.
+      if (s.count <= before.count && !s.streaming && s.net !== 1 && Date.now() - sentAt > 20_000) {
+        throw new Error(`${lane}: no reply showed up (prompt not sent, or the page changed and its reply selector needs fixing)`)
       }
       if (s.count <= before.count) continue
       mark(lane, 'firstReply')

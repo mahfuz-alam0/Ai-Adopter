@@ -35,7 +35,7 @@ export function useConnections(setStatus: (t: string) => void) {
     const next = Object.fromEntries(providers.map((p) => [p.id, lanes.state(p.id)]))
     localStorage.setItem(LOGINS, JSON.stringify(lanes.ok)) // last known login result survives a restart
     setStates((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
-    setShown((prev) => (prev?.id === lanes.shown?.id ? prev : lanes.shown))
+    setShown(lanes.shown) // replaced on change, never mutated, so React skips the render when it is the same object
   }, [providers])
   useEffect(() => {
     lanes.onDone = (id, ok) => {
