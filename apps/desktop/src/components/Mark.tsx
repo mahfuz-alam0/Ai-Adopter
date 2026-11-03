@@ -22,7 +22,9 @@ export function Mark({ p, size = 'md', className = '' }: { p: Provider; size?: k
     >
       {logo ? (
         <svg viewBox="0 0 24 24" className="size-[62%] fill-current" fillRule="evenodd">
-          <path d={logo} />
+          {logo.split('|').map((d) => (
+            <path key={d} d={d} />
+          ))}
         </svg>
       ) : (
         p.name.slice(0, 1).toUpperCase()
