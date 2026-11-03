@@ -55,10 +55,17 @@ export function useConnections(setStatus: (t: string) => void) {
 
   // Shared Google session: sign in once, then "Continue with Google" works on every AI site.
   const [google, setGoogle] = useState(lanes.google)
+  const [googleBusy, setGoogleBusy] = useState(false)
   const toggleGoogle = async () => {
-    const on = lanes.google ? await lanes.googleOut().then(() => false) : await lanes.googleLogin()
-    localStorage.setItem(GOOGLE, on ? '1' : '0')
-    setGoogle(on)
+    setGoogleBusy(true)
+    try {
+      // The session itself is the google.com cookies in the google lane's store on disk; the flag only remembers it.
+      const on = lanes.google ? await lanes.googleOut().then(() => false) : await lanes.googleLogin()
+      localStorage.setItem(GOOGLE, on ? '1' : '0')
+      setGoogle(on)
+    } finally {
+      setGoogleBusy(false)
+    }
   }
 
   const stateOf = (id: string): State => states[id] ?? lanes.state(id)
@@ -79,7 +86,7 @@ export function useConnections(setStatus: (t: string) => void) {
     setProviders(next)
     // Always show the login page. Sites like Gemini and ChatGPT give guests a prompt box with a tight limit,
     // and a hidden check cannot reliably tell a guest from a login.
-    setStatus(`Log in to ${p.name} below, then click Done. ${LOGIN_HINT}`)
+    setStatus(`Log in to ${p.name} in the box that opens, then click Done. ${LOGIN_HINT}`)
     await lanes.login(p.id).catch((e) => setStatus(String(e)))
     sync()
   }
@@ -92,7 +99,7 @@ export function useConnections(setStatus: (t: string) => void) {
     setProviders(next)
   }
 
-  return { providers, stateOf, ready, toggle, connect, remove, sync, shown, place: lanes.place.bind(lanes), unplace: lanes.unplace.bind(lanes), google, toggleGoogle: () => toggleGoogle().catch((e) => setStatus(String(e))) }
+  return { providers, stateOf, ready, toggle, connect, remove, sync, shown, place: lanes.place.bind(lanes), unplace: lanes.unplace.bind(lanes), google, googleBusy, toggleGoogle: () => toggleGoogle().catch((e) => setStatus(String(e))) }
 }
 
 export const LOGIN_HINT = 'Use email or a code, or sign in to Google under Connections first and pick Continue with Google.'

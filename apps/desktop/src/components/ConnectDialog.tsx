@@ -49,7 +49,7 @@ export function ConnectDialog() {
       className="m-auto max-h-[90vh] w-[min(460px,90vw)] overflow-auto rounded-2xl border border-line2 bg-panel p-[22px] text-fg shadow-lift open:animate-rise backdrop:bg-black/50 backdrop:backdrop-blur-md motion-reduce:animate-none"
     >
       <h3 className="text-base font-bold">Connect an AI</h3>
-      <p className="mb-4 text-muted">Pick one, then log in once in the panel that opens.</p>
+      <p className="mb-4 text-muted">Pick one, then log in once in the box that opens.</p>
       <div className="mb-3 grid grid-cols-3 gap-2 empty:after:col-span-full empty:after:text-muted empty:after:content-['Every_built-in_AI_is_already_connected.']">
         {PRESETS.filter((p) => !providers.some((x) => x.id === p.id)).map((p) => (
           <Button key={p.id} size="lg" style={tint(p.color)} className="group flex flex-col items-center gap-2 py-3.5 text-[13px] enabled:hover:border-(--c)/60" onClick={() => pick(p)}>

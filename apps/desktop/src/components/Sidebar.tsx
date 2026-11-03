@@ -38,7 +38,7 @@ const Avatar = ({ p, s }: { p: Provider; s: State }) => (
 )
 
 export function Sidebar() {
-  const { providers, stateOf, ready, toggle, remove, reset, setConnectOpen, account, remote } = useHub()
+  const { providers, stateOf, ready, toggle, remove, reset, setConnectOpen, google, googleBusy, toggleGoogle, remote } = useHub()
   const navigate = useNavigate()
   const waiting = providers.filter((p) => stateOf(p.id) === 'needs-user').length
   const menu = useRef<HTMLDivElement>(null)
@@ -49,7 +49,7 @@ export function Sidebar() {
     localStorage.sidebar = slim ? '' : 'slim'
     setSlim(!slim)
   }
-  const accountLabel = account.user ? `Sign out · ${account.user.email}` : 'Sign in with Google'
+  const accountLabel = google ? 'Sign out of Google' : 'Sign in with Google'
 
   // One shared menu for every AI, opened at the pointer. The popover API closes it on Escape or an outside click.
   const openMenu = (p: Provider, x: number, y: number) => {
@@ -210,8 +210,8 @@ export function Sidebar() {
         className={`mt-2 flex w-full items-center gap-2.5 ${slim ? 'justify-center' : 'text-left'}`}
         title={slim ? accountLabel : undefined}
         aria-label={accountLabel}
-        disabled={account.busy}
-        onClick={() => void account.toggle()}
+        disabled={googleBusy}
+        onClick={() => void toggleGoogle()}
       >
         <Icon d={USER} />
         {!slim && <span className="min-w-0 truncate">{accountLabel}</span>}

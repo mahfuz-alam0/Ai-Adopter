@@ -29,7 +29,7 @@ export function RemotePage() {
             <b className="block text-[15px]">Sign in first</b>
             <p className="mt-0.5 mb-3 text-muted">Remote ties requests to your account.</p>
             <Button variant="primary" disabled={account.busy} onClick={() => void account.toggle()}>
-              Sign in with Google
+              Sign in to AI Hub
             </Button>
           </section>
         ) : (
@@ -39,7 +39,10 @@ export function RemotePage() {
                 <b className="block text-[15px]">Remote access</b>
                 <span className="text-xs text-muted" role="status">{LABEL[state]}</span>
               </div>
-              <Button className="ml-auto" variant={state === 'off' ? 'primary' : 'default'} onClick={toggle}>
+              <Button className="ml-auto" variant="ghost" size="sm" onClick={() => void account.toggle()}>
+                Sign out · {account.user.email}
+              </Button>
+              <Button variant={state === 'off' ? 'primary' : 'default'} onClick={toggle}>
                 {state === 'off' ? 'Turn on' : 'Turn off'}
               </Button>
             </section>

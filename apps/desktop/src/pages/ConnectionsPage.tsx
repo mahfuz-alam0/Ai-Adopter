@@ -4,7 +4,7 @@ import { useHub } from '../state/HubContext.tsx'
 
 // Manage the apps: open a login window, hide it again, or remove an app.
 export function ConnectionsPage() {
-  const { providers, stateOf, toggle, remove, setConnectOpen, google, toggleGoogle } = useHub()
+  const { providers, stateOf, toggle, remove, setConnectOpen, google, googleBusy, toggleGoogle } = useHub()
   return (
     <div className="min-h-0 flex-1 overflow-auto px-7 pt-7 pb-6">
       <div className="mx-auto mb-5 flex max-w-[1200px] items-center justify-between gap-4">
@@ -23,7 +23,7 @@ export function ConnectionsPage() {
             {google ? 'Signed in. Pick Continue with Google on any AI site.' : 'Sign in once, then use Continue with Google on every AI site.'}
           </p>
         </div>
-        <Button variant={google ? 'ghost' : 'primary'} onClick={() => void toggleGoogle()}>
+        <Button variant={google ? 'ghost' : 'primary'} disabled={googleBusy} onClick={() => void toggleGoogle()}>
           {google ? 'Sign out' : 'Sign in with Google'}
         </Button>
       </div>
