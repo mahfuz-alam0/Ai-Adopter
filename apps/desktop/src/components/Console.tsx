@@ -68,7 +68,7 @@ export function Console({ ref }: { ref: Ref<HTMLDivElement> }) {
   return (
     <form
       // The top padding is the gap the wires cross.
-      className="mx-auto w-full max-w-[860px] flex-none px-6 pt-7 pb-4"
+      className="mx-auto w-full max-w-215 flex-none px-6 pt-7 pb-4"
       onSubmit={(e) => {
         e.preventDefault()
         send()
@@ -76,7 +76,7 @@ export function Console({ ref }: { ref: Ref<HTMLDivElement> }) {
     >
       <div
         ref={ref}
-        className={`relative rounded-2xl border bg-panel shadow-lift transition-colors before:absolute before:-top-[5px] before:left-1/2 before:-ml-[5px] before:size-2.5 before:rounded-full before:shadow-[0_0_0_3px_var(--color-bg)] before:[background:var(--ring,var(--color-accent))] focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/20 ${running ? 'animate-glow border-accent/60 [--c:var(--color-accent)] motion-reduce:animate-none' : 'border-line2'}`}
+        className={`relative rounded-2xl border bg-panel shadow-lift transition-colors before:absolute before:-top-1.25 before:left-1/2 before:-ml-1.25 before:size-2.5 before:rounded-full before:shadow-[0_0_0_3px_var(--color-bg)] before:[background:var(--ring,var(--color-accent))] focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/20 ${running ? 'animate-glow border-accent/60 [--c:var(--color-accent)] motion-reduce:animate-none' : 'border-line2'}`}
       >
         <textarea
           ref={box}
@@ -111,7 +111,7 @@ export function Console({ ref }: { ref: Ref<HTMLDivElement> }) {
             onClick={() => (account.user ? remote.toggle() : void navigate('/remote'))}
             className={`ml-auto flex flex-none items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs transition-colors ${remoteOn ? 'border-good/50 text-good' : 'border-line text-muted'} ${focusRing}`}
           >
-            <span className={`relative h-3 w-[22px] rounded-full transition-colors after:absolute after:top-0.5 after:size-2 after:rounded-full after:bg-white after:transition-[left] ${remoteOn ? 'bg-good after:left-[calc(100%-10px)]' : 'bg-line2 after:left-0.5'}`} />
+            <span className={`relative h-3 w-5.5 rounded-full transition-colors after:absolute after:top-0.5 after:size-2 after:rounded-full after:bg-white after:transition-[left] ${remoteOn ? 'bg-good after:left-[calc(100%-10px)]' : 'bg-line2 after:left-0.5'}`} />
             Remote
           </button>
           <Button type="submit" variant="primary" disabled={running || !text.trim()} className="flex-none px-4 py-1">

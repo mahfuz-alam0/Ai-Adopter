@@ -12,6 +12,21 @@
   const $ = (s) => document.querySelector(s)
   const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
+  // Lanes run in hidden windows. WebKit reports a hidden page as hidden and pauses requestAnimationFrame there,
+  // and chat sites paint streamed tokens on animation frames, so replies reached the DOM late or all at once.
+  // Tell the page it is visible, and drive frames from timers while it really is hidden (a shown login window keeps real frames).
+  // Guarded: if this throws, window.__lane below must still be defined.
+  try {
+    const hidden = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden').get
+    Object.defineProperty(document, 'hidden', { get: () => false })
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible' })
+    const raf = window.requestAnimationFrame.bind(window)
+    const caf = window.cancelAnimationFrame.bind(window)
+    // Negative ids are timers, so cancel knows which kind it holds.
+    window.requestAnimationFrame = (cb) => (hidden.call(document) ? -setTimeout(() => cb(performance.now()), 16) : raf(cb))
+    window.cancelAnimationFrame = (id) => (id < 0 ? clearTimeout(-id) : caf(id))
+  } catch {}
+
   // The reply streams over fetch as SSE/ndjson on most sites. Stream end is the exact "done" signal, so the
   // caller need not wait for the page to look quiet. Text still comes from the DOM: every site's stream format differs.
   // net.t / net.reqs are the dev timing log (see lib/devlog.ts): when each step happened in the page, and every fetch after send.

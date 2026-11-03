@@ -11,7 +11,7 @@ export function Sidebar() {
   const waiting = providers.filter((p) => stateOf(p.id) === 'needs-user').length
 
   return (
-    <aside className="flex min-h-0 flex-col border-r border-line bg-side px-3 pt-[18px] pb-3">
+    <aside className="flex min-h-0 flex-col border-r border-line bg-side px-3 pt-4.5 pb-3">
       <div className="flex items-center gap-2.5 px-2 pb-4 text-[15px] font-semibold tracking-tight">
         <img src="/logo.svg" alt="" className="size-7" />
         AI Hub
@@ -30,7 +30,7 @@ export function Sidebar() {
               <span className="size-2 rounded-full bg-good" title="Remote is on" />
             )}
             {p.path === '/connections' && waiting > 0 && (
-              <span className="min-w-[18px] rounded-full bg-warn px-1.5 text-center text-[11px]/[18px] font-normal text-on" title="A window is waiting for you">
+              <span className="min-w-4.5 rounded-full bg-warn px-1.5 text-center text-[11px]/[18px] font-normal text-on" title="A window is waiting for you">
                 {waiting}
               </span>
             )}
